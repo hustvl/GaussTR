@@ -1,0 +1,7 @@
+torch
+torchvision
+mmcv
+mmdet
+mmdet3d
+openmim
+ninja
