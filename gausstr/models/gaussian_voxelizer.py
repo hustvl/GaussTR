@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from mmdet3d.registry import MODELS
 
-from .utils import generate_grid, unbatched_forward
+from .utils import generate_grid, get_covariance, quat_to_rotmat
 
 
 def apply_to_items(func, iterable):
@@ -26,8 +26,6 @@ def splat_into_3d(grid_coords,
     if features is not None:
         grid_feats = torch.zeros((*grid_coords.shape[:2], features.size(-1)),
                                  device=grid_coords.device)
-    else:
-        grid_feats = None
     grid_cnts = torch.zeros_like(grid_density, dtype=torch.int)
 
     for g in range(means3d.size(1)):
@@ -46,7 +44,7 @@ def splat_into_3d(grid_coords,
         feats = opacities[:, g, None] * features[:, g, None] * torch.exp(
             -0.5 * maha_dist)
         grid_feats += mask * (feats - grid_feats) / denom
-    return grid_density, grid_feats
+    return (grid_density, grid_feats) if features is not None else grid_density
 
 
 @MODELS.register_module()
@@ -54,11 +52,11 @@ class GaussianVoxelizer(nn.Module):
 
     def __init__(self, vol_range, voxel_size):
         super().__init__()
-        scene_shape = [
+        self.scene_shape = [
             int((vol_range[i + 3] - vol_range[i]) / voxel_size)
             for i in range(3)
         ]
-        grid_coords = generate_grid(scene_shape, offset=0.5)
+        grid_coords = generate_grid(self.scene_shape, offset=0.5)
         grid_coords = grid_coords * voxel_size + torch.tensor(vol_range[:3])
         self.register_buffer('grid_coords', grid_coords)
 
@@ -73,29 +71,11 @@ class GaussianVoxelizer(nn.Module):
 
         if 'covariances' not in gaussians:
             gaussians['covariances'] = get_covariance(
-                gaussians.pop('scales'), gaussians.pop('rotations'))
-
-        return splat_into_3d(self.grid_coords, **gaussians)
-
-
-def get_covariance(s, r):
-    q = r / torch.sqrt((r**2).sum(dim=1, keepdim=True))
-    r, x, y, z = [i.squeeze(1) for i in q.split(1, dim=1)]
-
-    R = torch.zeros((r.size(0), 3, 3)).to(r)
-    R[:, 0, 0] = 1 - 2 * (y * y + z * z)
-    R[:, 0, 1] = 2 * (x * y - r * z)
-    R[:, 0, 2] = 2 * (x * z + r * y)
-    R[:, 1, 0] = 2 * (x * y + r * z)
-    R[:, 1, 1] = 1 - 2 * (x * x + z * z)
-    R[:, 1, 2] = 2 * (y * z - r * x)
-    R[:, 2, 0] = 2 * (x * z - r * y)
-    R[:, 2, 1] = 2 * (y * z + r * x)
-    R[:, 2, 2] = 1 - 2 * (x * x + y * y)
-
-    L = torch.zeros_like(R)
-    for i in range(3):
-        L[:, i, i] = s[:, i]
-    L = R @ L
-    cov = L @ L.mT
-    return cov
+                gaussians.pop('scales'),
+                quat_to_rotmat(gaussians.pop('rotations')))
+        outs = splat_into_3d(self.grid_coords, **gaussians)
+        outs = [
+            out.reshape(out.size(0), *self.scene_shape, out.size(-1))
+            for out in (outs if isinstance(outs, tuple) else [outs])
+        ]
+        return outs if len(outs) > 1 else outs[0]

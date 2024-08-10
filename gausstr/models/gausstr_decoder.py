@@ -14,6 +14,7 @@ MODELS.register_module(
     'DeformableDetrTransformerEncoder',
     module=DeformableDetrTransformerEncoder)
 
+
 def coordinate_to_encoding(coord_tensor,
                            num_feats=128,
                            temperature=10000,

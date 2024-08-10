@@ -99,6 +99,23 @@ def rotmat_to_quat(rot_matrices):
     return torch.from_numpy(np.stack(quats)).to(inputs)
 
 
+def quat_to_rotmat(quats):
+    q = quats / torch.sqrt((quats**2).sum(dim=-1, keepdim=True))
+    r, x, y, z = [i.squeeze(-1) for i in q.split(1, dim=-1)]
+
+    R = torch.zeros((*r.shape, 3, 3)).to(r)
+    R[..., 0, 0] = 1 - 2 * (y * y + z * z)
+    R[..., 0, 1] = 2 * (x * y - r * z)
+    R[..., 0, 2] = 2 * (x * z + r * y)
+    R[..., 1, 0] = 2 * (x * y + r * z)
+    R[..., 1, 1] = 1 - 2 * (x * x + z * z)
+    R[..., 1, 2] = 2 * (y * z - r * x)
+    R[..., 2, 0] = 2 * (x * z - r * y)
+    R[..., 2, 1] = 2 * (y * z + r * x)
+    R[..., 2, 2] = 1 - 2 * (x * x + y * y)
+    return R
+
+
 def get_covariance(s, r):
     L = torch.zeros((*s.shape[:2], 3, 3)).to(s)
     for i in range(s.size(-1)):
