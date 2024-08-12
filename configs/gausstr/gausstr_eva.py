@@ -13,21 +13,17 @@ model = dict(
         mean=[123.675, 116.28, 103.53],
         std=[58.395, 57.12, 57.375]),
     neck=dict(
-        type='ChannelMapper',
-        _scope_='mmdet',
-        in_channels=[768],
-        kernel_size=1,
+        type='ViTDetFPN',
+        in_channels=768,
         out_channels=256,
-        act_cfg=None,
-        norm_cfg=dict(type='GN', num_groups=32),
-        num_outs=1),
+        norm_cfg=dict(type='LN2d')),
     decoder=dict(
         type='GaussTRDecoder',
         num_layers=3,
         return_intermediate=True,
         layer_cfg=dict(
             self_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
-            cross_attn_cfg=dict(embed_dims=256),
+            cross_attn_cfg=dict(embed_dims=256, num_levels=4),
             ffn_cfg=dict(embed_dims=256, feedforward_channels=2048)),
         post_norm_cfg=None),
     gauss_head=dict(

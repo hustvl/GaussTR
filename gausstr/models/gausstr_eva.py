@@ -6,7 +6,7 @@ from mmpretrain import get_model
 
 from mmdet3d.registry import MODELS
 
-from .utils import nchw_to_nlc
+from .utils import flatten_multi_scale_feats
 
 
 @MODELS.register_module()
@@ -75,10 +75,10 @@ class GaussTR_EVA(BaseModel):
         inputs, data_samples = self.prepare_inputs(inputs, data_samples)
         with torch.no_grad():
             x = self.backbone.extract_feat(inputs['imgs'].flatten(0, 1))
-        x = self.neck(x)
+        x = self.neck(x[0])
 
         decoder_inputs = self.pre_transformer(x)
-        feats = nchw_to_nlc(x[0])
+        feats = flatten_multi_scale_feats(x)[0]
         decoder_inputs.update(self.pre_decoder(feats))
         decoder_outputs = self.forward_decoder(
             reg_branches=[h.reg_branch for h in self.gauss_heads],
