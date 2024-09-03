@@ -43,7 +43,7 @@ model = dict(
         return_intermediate=True,
         layer_cfg=dict(
             self_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
-            cross_attn_cfg=dict(embed_dims=256),
+            cross_attn_cfg=dict(embed_dims=256, num_levels=4),
             ffn_cfg=dict(embed_dims=256, feedforward_channels=2048)),
         post_norm_cfg=None),
     positional_encoding=dict(
@@ -136,7 +136,7 @@ train_dataloader = dict(
     dataset=dict(
         ann_file='nuscenes_infos_train.pkl',
         pipeline=train_pipeline,
-        load_adj_frame=True,
+        # load_adj_frame=True,
         **shared_dataset_cfg))
 val_dataloader = dict(
     batch_size=4,
@@ -148,6 +148,7 @@ val_dataloader = dict(
     dataset=dict(
         ann_file='nuscenes_infos_mini_val.pkl',  # TODO
         pipeline=test_pipeline,
+        # load_adj_frame=True,
         **shared_dataset_cfg))
 test_dataloader = val_dataloader
 

@@ -5,7 +5,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mmdet.models import MLP, inverse_sigmoid
+from mmdet.models import inverse_sigmoid
+from mmengine.model import BaseModule
 
 from mmdet3d.registry import MODELS
 
@@ -34,52 +35,17 @@ def flatten_bsn_forward(func, *args, **kwargs):
     return outs
 
 
-def disp_to_depth(disp, range):
-    min_disp = 1 / range[1]
-    max_disp = 1 / range[0]
-    scaled_disp = min_disp + (max_disp - min_disp) * disp
-    depth = 1 / scaled_disp
-    return depth
-
-
 @MODELS.register_module()
-class Scaler(MLP):
+class GaussTRCLIPHead(BaseModule):
 
     def __init__(self,
-                 input_dim,
-                 hidden_dim=None,
-                 output_dim=1,
-                 num_layers=2,
-                 mode='sigmoid',
-                 range=None):
-        if hidden_dim is None:
-            hidden_dim = input_dim * 4
-        super().__init__(input_dim, hidden_dim, output_dim, num_layers)
-        self.range = range
-        self.mode = mode
-
-    def forward(self, x):
-        for i, layer in enumerate(self.layers):
-            x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
-
-        if self.range is None:
-            if self.mode == 'sigmoid':
-                x = F.sigmoid(x)
-            return x
-
-        match self.mode:
-            case 'sigmoid':
-                return self.range[0] + (self.range[1] -
-                                        self.range[0]) * F.sigmoid(x)
-            case 'disparity':
-                return disp_to_depth(F.sigmoid(x), self.range)
-
-
-@MODELS.register_module()
-class GaussTRHead(nn.Module):
-
-    def __init__(self, opacity_head, scale_head, image_shape, rasterizer,
-                 voxelizer):
+                 opacity_head,
+                 scale_head,
+                 image_shape,
+                 rasterizer,
+                 voxelizer,
+                 visual_projection=None,
+                 text_protos=None):
         super().__init__()
         self.opacity_head = MODELS.build(opacity_head)
         self.scale_head = MODELS.build(scale_head)
@@ -87,11 +53,22 @@ class GaussTRHead(nn.Module):
             nn.Linear(256, 1024), nn.ReLU(), nn.Linear(1024, 2))
         self.image_shape = image_shape
 
+        if visual_projection is not None:
+            self.visual_projection = MODELS.build(visual_projection)
+            if 'init_cfg' in visual_projection and visual_projection.init_cfg.type == 'Pretrained':
+                self.visual_projection.requires_grad_(False)
+        if text_protos is not None:
+            self.register_buffer('text_proto_embeds', torch.load(text_protos))
+            self.logit_scale = 1 / 0.07
+
         self.rasterizer = MODELS.build(rasterizer)
         self.voxelizer = MODELS.build(voxelizer)
         self.silog_loss = MODELS.build(dict(type='SiLogLoss', _scope_='mmseg'))
 
-        self.ub_depth = 51.2
+        self.feature_head = MODELS.build(
+            dict(type='Scaler', input_dim=256, output_dim=39, mode=None))
+
+        self.ub_depth = 48
 
     def forward(self,
                 x,
@@ -137,20 +114,36 @@ class GaussTRHead(nn.Module):
 
         rendered_imgs, rendered_depth = self.rasterizer(
             means3d.flatten(1, 2),
-            colors.flatten(1, 2),
+            self.feature_head(x).flatten(1, 2).float(),
             opacities.flatten(1, 2),
             scales=scales.flatten(1, 2),
             rotations=rotations.flatten(1, 2),
             img_shape=(900, 1600),  # TODO
-            **self.compute_ref_params(cam2img, cam2ego, **kwargs))
+            cam2img=cam2img,
+            cam2ego=cam2ego,
+            img_aug_mat=kwargs['img_aug_mat'])
         # self.visualize_rendered_results((rendered_depth, depth.unsqueeze(2)))
+
+        feats = feats.flatten(2).mT
+        feats = self.visual_projection(feats)[0]
+        feats /= feats.norm(dim=-1, keepdim=True)
+        logits = feats @ self.text_proto_embeds * self.logit_scale
+        logits = logits.softmax(-1)
+
+        rendered_imgs = rendered_imgs[:, :6].flatten(0, 1)
+        rendered_imgs = F.avg_pool2d(rendered_imgs, 16)
+        rendered_imgs = rendered_imgs.flatten(2).mT
+        rendered_imgs = rendered_imgs.softmax(-1)
 
         depth = torch.where(depth < self.ub_depth, depth, 1e-3)
         losses = {}
         losses['loss_depth'] = self.depth_loss(
-            rendered_depth.flatten(0, 2), depth.flatten(0, 1))
+            rendered_depth.flatten(0, 2), depth[:, :6].flatten(0, 1))
         losses['mae_depth'] = self.depth_loss(
-            rendered_depth.flatten(0, 2), depth.flatten(0, 1), criterion='l1')
+            rendered_depth.flatten(0, 2),
+            depth[:, :6].flatten(0, 1),
+            criterion='l1')
+        losses['loss_kldiv'] = F.kl_div(rendered_imgs, logits) * 5
         return losses
 
     def photometric_error(self, src_imgs, rec_imgs):

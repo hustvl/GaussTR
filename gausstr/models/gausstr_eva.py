@@ -74,11 +74,11 @@ class GaussTR_EVA(BaseModel):
             self.backbone.eval()
         inputs, data_samples = self.prepare_inputs(inputs, data_samples)
         with torch.no_grad():
-            x = self.backbone.extract_feat(inputs['imgs'].flatten(0, 1))
-        x = self.neck(x[0])
+            x = self.backbone.extract_feat(inputs['imgs'].flatten(0, 1))[0]
+        feats = self.neck(x)
 
-        decoder_inputs = self.pre_transformer(x)
-        feats = flatten_multi_scale_feats(x)[0]
+        decoder_inputs = self.pre_transformer(feats)
+        feats = flatten_multi_scale_feats(feats)[0]
         decoder_inputs.update(self.pre_decoder(feats))
         decoder_outputs = self.forward_decoder(
             reg_branches=[h.reg_branch for h in self.gauss_heads],
@@ -94,7 +94,11 @@ class GaussTR_EVA(BaseModel):
         losses = {}
         for i, gauss_head in enumerate(self.gauss_heads):
             loss = gauss_head(
-                query[i], reference_points[i], mode=mode, **data_samples)
+                query[i],
+                reference_points[i],
+                mode=mode,
+                imgs=x,
+                **data_samples)
             for k, v in loss.items():
                 losses[f'{k}/{i}'] = v
         return losses

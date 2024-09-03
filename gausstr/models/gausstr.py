@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from mmengine.model import BaseModel
+from mmengine.model import BaseModel, ModuleList
 
 from mmdet3d.registry import MODELS
 
@@ -24,7 +24,7 @@ class GaussTR(BaseModel):
         self.query_embeds = nn.Embedding(
             num_queries, decoder.layer_cfg.self_attn_cfg.embed_dims)
 
-        self.gauss_heads = nn.ModuleList(
+        self.gauss_heads = ModuleList(
             [MODELS.build(gauss_head) for _ in range(decoder.num_layers)])
 
     def prepare_inputs(self, inputs_dict, data_samples):
@@ -69,10 +69,11 @@ class GaussTR(BaseModel):
 
     def forward(self, inputs, data_samples, mode='loss'):
         inputs, data_samples = self.prepare_inputs(inputs, data_samples)
-        x = self.backbone(inputs['imgs'].flatten(0, 1))
-        x = self.neck(x)
+        with torch.no_grad():
+            x = self.backbone(inputs['imgs'].flatten(0, 1))[0]
+        feats = self.neck(x)
 
-        encoder_inputs, decoder_inputs = self.pre_transformer(x)
+        encoder_inputs, decoder_inputs = self.pre_transformer(feats)
         feats = self.forward_encoder(**encoder_inputs)
         decoder_inputs.update(self.pre_decoder(feats))
         decoder_outputs = self.forward_decoder(
@@ -89,7 +90,11 @@ class GaussTR(BaseModel):
         losses = {}
         for i, gauss_head in enumerate(self.gauss_heads):
             loss = gauss_head(
-                query[i], reference_points[i], mode=mode, **data_samples)
+                query[i],
+                reference_points[i],
+                mode=mode,
+                imgs=x,
+                **data_samples)
             for k, v in loss.items():
                 losses[f'{k}/{i}'] = v
         return losses
