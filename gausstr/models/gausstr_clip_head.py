@@ -3,7 +3,6 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from mmdet.models import inverse_sigmoid
 from mmengine.model import BaseModule
@@ -40,35 +39,34 @@ class GaussTRCLIPHead(BaseModule):
 
     def __init__(self,
                  opacity_head,
+                 feature_head,
                  scale_head,
+                 regress_head,
                  image_shape,
                  rasterizer,
                  voxelizer,
+                 depth_limit=51.2,
                  visual_projection=None,
                  text_protos=None):
         super().__init__()
         self.opacity_head = MODELS.build(opacity_head)
+        self.feature_head = MODELS.build(feature_head)
         self.scale_head = MODELS.build(scale_head)
-        self.reg_branch = nn.Sequential(
-            nn.Linear(256, 1024), nn.ReLU(), nn.Linear(1024, 2))
+        self.regress_head = MODELS.build(regress_head)
         self.image_shape = image_shape
+        self.depth_limit = depth_limit
 
         if visual_projection is not None:
             self.visual_projection = MODELS.build(visual_projection)
             if 'init_cfg' in visual_projection and visual_projection.init_cfg.type == 'Pretrained':
                 self.visual_projection.requires_grad_(False)
         if text_protos is not None:
-            self.register_buffer('text_proto_embeds', torch.load(text_protos))
-            self.logit_scale = 1 / 0.07
+            self.register_buffer('text_proto_embeds',
+                                 torch.load(text_protos, map_location='cpu'))
 
         self.rasterizer = MODELS.build(rasterizer)
         self.voxelizer = MODELS.build(voxelizer)
         self.silog_loss = MODELS.build(dict(type='SiLogLoss', _scope_='mmseg'))
-
-        self.feature_head = MODELS.build(
-            dict(type='Scaler', input_dim=256, output_dim=39, mode=None))
-
-        self.ub_depth = 48
 
     def forward(self,
                 x,
@@ -82,10 +80,9 @@ class GaussTRCLIPHead(BaseModule):
         bs, n = cam2img.shape[:2]
         x = x.reshape(bs, n, *x.shape[1:])
         ref_pts = (
-            self.reg_branch(x) +
+            self.regress_head(x) +
             inverse_sigmoid(ref_pts.reshape(*x.shape[:-1], -1))).sigmoid()
-
-        depth = depth.clamp(max=self.ub_depth)
+        depth = depth.clamp(max=self.depth_limit)
         sample_depth = flatten_bsn_forward(F.grid_sample, depth[:, :n, None],
                                            ref_pts.unsqueeze(2) * 2 - 1)
         sample_depth = sample_depth[:, :, 0, 0, :, None]
@@ -97,7 +94,7 @@ class GaussTRCLIPHead(BaseModule):
         opacities = self.opacity_head(x)
         scales = self.scale_head(x) * self.scale_transform(
             sample_depth, cam2img[..., 0, 0]).clamp(1e-6)
-        colors = torch.randn_like(means3d)
+        features = self.feature_head(x).float()
 
         covariances = flatten_bsn_forward(get_covariance, scales,
                                           cam2ego[..., None, :3, :3])
@@ -105,16 +102,27 @@ class GaussTRCLIPHead(BaseModule):
         rotations = rotations.unsqueeze(2).expand(-1, -1, x.size(2), -1)
 
         if mode == 'predict':
-            pred = self.voxelizer(
+            features = features @ self.text_proto_embeds
+
+            density, grid_feats = self.voxelizer(
                 means3d=means3d.flatten(1, 2),
                 opacities=opacities.flatten(1, 2),
+                features=features.flatten(1, 2).softmax(-1),
                 covariances=covariances.flatten(1, 2))
             pred = torch.where(pred.squeeze(-1) > 0.0625, 1, 17)  # 4e-2 ~ 1/8
             return pred
 
+        tgt_feats = imgs.flatten(2).mT
+        tgt_feats = self.visual_projection(tgt_feats)[0]
+        u, s, v = torch.pca_lowrank(
+            tgt_feats.flatten(0, 1).double(), q=32, niter=4)
+        tgt_feats = tgt_feats @ v.to(tgt_feats)
+        features = features @ v.to(features)
+        features = features.float()
+
         rendered_imgs, rendered_depth = self.rasterizer(
             means3d.flatten(1, 2),
-            self.feature_head(x).flatten(1, 2).float(),
+            features.flatten(1, 2),
             opacities.flatten(1, 2),
             scales=scales.flatten(1, 2),
             rotations=rotations.flatten(1, 2),
@@ -124,18 +132,11 @@ class GaussTRCLIPHead(BaseModule):
             img_aug_mat=kwargs['img_aug_mat'])
         # self.visualize_rendered_results((rendered_depth, depth.unsqueeze(2)))
 
-        feats = feats.flatten(2).mT
-        feats = self.visual_projection(feats)[0]
-        feats /= feats.norm(dim=-1, keepdim=True)
-        logits = feats @ self.text_proto_embeds * self.logit_scale
-        logits = logits.softmax(-1)
-
         rendered_imgs = rendered_imgs[:, :6].flatten(0, 1)
         rendered_imgs = F.avg_pool2d(rendered_imgs, 16)
         rendered_imgs = rendered_imgs.flatten(2).mT
-        rendered_imgs = rendered_imgs.softmax(-1)
 
-        depth = torch.where(depth < self.ub_depth, depth, 1e-3)
+        depth = torch.where(depth < self.depth_limit, depth, 1e-3)
         losses = {}
         losses['loss_depth'] = self.depth_loss(
             rendered_depth.flatten(0, 2), depth[:, :6].flatten(0, 1))
@@ -143,7 +144,10 @@ class GaussTRCLIPHead(BaseModule):
             rendered_depth.flatten(0, 2),
             depth[:, :6].flatten(0, 1),
             criterion='l1')
-        losses['loss_kldiv'] = F.kl_div(rendered_imgs, logits) * 5
+        losses['loss_cosine'] = F.cosine_embedding_loss(
+            rendered_imgs.flatten(0, 1), tgt_feats.flatten(0, 1),
+            torch.ones_like(tgt_feats.flatten(0, 1)[:, 0])) * 2
+        losses['loss_mse'] = F.mse_loss(rendered_imgs, tgt_feats) * 2
         return losses
 
     def photometric_error(self, src_imgs, rec_imgs):

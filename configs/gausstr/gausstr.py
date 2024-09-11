@@ -146,7 +146,7 @@ val_dataloader = dict(
     drop_last=False,
     sampler=dict(type='DefaultSampler', shuffle=False),
     dataset=dict(
-        ann_file='nuscenes_infos_mini_val.pkl',  # TODO
+        ann_file='nuscenes_infos_val.pkl',
         pipeline=test_pipeline,
         # load_adj_frame=True,
         **shared_dataset_cfg))

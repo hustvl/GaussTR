@@ -7,7 +7,7 @@ input_size = (432, 768)
 model = dict(
     type='GaussTR',
     _delete_=True,
-    num_queries=300,
+    num_queries=100,
     data_preprocessor=dict(
         type='Det3DDataPreprocessor',
         mean=[123.675, 116.28, 103.53],
@@ -16,11 +16,8 @@ model = dict(
         type='VisionTransformer',
         _scope_='mmpretrain',
         arch='b',
-        img_size=224,
-        patch_size=16,
-        drop_rate=0.,
+        out_indices=-2,
         out_type='featmap',
-        layer_cfgs=dict(act_cfg=dict(type='QuickGELU')),
         pre_norm=True,
         frozen_stages=12,
         init_cfg=dict(
@@ -56,9 +53,19 @@ model = dict(
         temperature=20),
     gauss_head=dict(
         type='GaussTRCLIPHead',
-        opacity_head=dict(type='Scaler', input_dim=256),
+        opacity_head=dict(
+            type='MLP', input_dim=256, output_dim=1, mode='sigmoid'),
+        feature_head=dict(type='MLP', input_dim=256, output_dim=512),
         scale_head=dict(
-            type='Scaler', input_dim=256, output_dim=3, range=(1, 16)),
+            type='MLP',
+            input_dim=256,
+            output_dim=3,
+            mode='sigmoid',
+            range=(1, 16)),
+        regress_head=dict(
+            type='MLP',
+            input_dim=256,
+            output_dim=2),
         visual_projection=dict(
             type='CLIPProjection',
             _scope_='mmpretrain',

@@ -17,15 +17,17 @@ class GaussTR(BaseModel):
         self.encoder = MODELS.build(encoder)
         self.decoder = MODELS.build(decoder)
         self.positional_encoding = MODELS.build(positional_encoding)
-
         self.level_embed = nn.Parameter(
             torch.Tensor(encoder.layer_cfg.self_attn_cfg.num_levels,
                          encoder.layer_cfg.self_attn_cfg.embed_dims))
         self.query_embeds = nn.Embedding(
             num_queries, decoder.layer_cfg.self_attn_cfg.embed_dims)
-
         self.gauss_heads = ModuleList(
             [MODELS.build(gauss_head) for _ in range(decoder.num_layers)])
+
+        self.frozen_backbone = all(not param.requires_grad
+                                   for param in self.backbone.parameters())
+        self.return_values = backbone.out_indices == -2
 
     def prepare_inputs(self, inputs_dict, data_samples):
         num_views = data_samples[0].num_views
@@ -69,7 +71,14 @@ class GaussTR(BaseModel):
 
     def forward(self, inputs, data_samples, mode='loss'):
         inputs, data_samples = self.prepare_inputs(inputs, data_samples)
-        with torch.no_grad():
+        if self.frozen_backbone:
+            if self.backbone.training:
+                self.backbone.eval()
+            with torch.no_grad():
+                x = self.backbone(inputs['imgs'].flatten(0, 1))[0]
+                if self.return_values:
+                    x = self.forward_values(x)
+        else:
             x = self.backbone(inputs['imgs'].flatten(0, 1))[0]
         feats = self.neck(x)
 
@@ -77,7 +86,7 @@ class GaussTR(BaseModel):
         feats = self.forward_encoder(**encoder_inputs)
         decoder_inputs.update(self.pre_decoder(feats))
         decoder_outputs = self.forward_decoder(
-            reg_branches=[h.reg_branch for h in self.gauss_heads],
+            reg_branches=[h.regress_head for h in self.gauss_heads],
             **decoder_inputs)
 
         query = decoder_outputs['hidden_states']
@@ -98,6 +107,20 @@ class GaussTR(BaseModel):
             for k, v in loss.items():
                 losses[f'{k}/{i}'] = v
         return losses
+
+    def forward_values(self, x):
+        B, C, H, W = x.shape
+        x = x.flatten(2).mT
+        last_layer = self.backbone.layers[-1]
+        qkv = last_layer.attn.qkv(last_layer.ln1(x)).reshape(
+            B, H * W, 3, last_layer.attn.embed_dims)
+        v = last_layer.attn.proj(qkv[:, :, 2])
+        v += x
+        v = last_layer.ffn(last_layer.ln2(v), identity=v)
+
+        if self.backbone.final_norm:
+            v = self.backbone.ln1(v)
+        return v.reshape(B, H, W, C).permute(0, 3, 1, 2)
 
     def pre_transformer(self, mlvl_feats):
         batch_size = mlvl_feats[0].size(0)

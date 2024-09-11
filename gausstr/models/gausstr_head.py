@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mmdet.models import MLP, inverse_sigmoid
+from mmdet.models import inverse_sigmoid
 
 from mmdet3d.registry import MODELS
 
@@ -34,45 +34,36 @@ def flatten_bsn_forward(func, *args, **kwargs):
     return outs
 
 
-def disp_to_depth(disp, range):
-    min_disp = 1 / range[1]
-    max_disp = 1 / range[0]
-    scaled_disp = min_disp + (max_disp - min_disp) * disp
-    depth = 1 / scaled_disp
-    return depth
-
-
 @MODELS.register_module()
-class Scaler(MLP):
+class MLP(nn.Module):
 
     def __init__(self,
                  input_dim,
                  hidden_dim=None,
-                 output_dim=1,
+                 output_dim=None,
                  num_layers=2,
-                 mode='sigmoid',
+                 mode=None,
                  range=None):
-        if hidden_dim is None:
-            hidden_dim = input_dim * 4
-        super().__init__(input_dim, hidden_dim, output_dim, num_layers)
+        super().__init__()
+        hidden_dim = input_dim * 4 if hidden_dim is None else hidden_dim
+        output_dim = input_dim if output_dim is None else output_dim
+        self.num_layers = num_layers
+        h = [hidden_dim] * (num_layers - 1)
+        self.layers = nn.ModuleList(
+            nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
         self.range = range
         self.mode = mode
 
     def forward(self, x):
         for i, layer in enumerate(self.layers):
-            x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
+            x = F.gelu(layer(x)) if i < self.num_layers - 1 else layer(x)
 
-        if self.range is None:
+        if self.mode is not None:
             if self.mode == 'sigmoid':
                 x = F.sigmoid(x)
-            return x
-
-        match self.mode:
-            case 'sigmoid':
-                return self.range[0] + (self.range[1] -
-                                        self.range[0]) * F.sigmoid(x)
-            case 'disparity':
-                return disp_to_depth(F.sigmoid(x), self.range)
+            if self.range is not None:
+                x = self.range[0] + (self.range[1] - self.range[0]) * x
+        return x
 
 
 @MODELS.register_module()

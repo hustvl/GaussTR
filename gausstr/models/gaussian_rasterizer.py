@@ -182,7 +182,9 @@ class GaussianRasterizer(nn.Module):
     def save_ply(self, means3d, colors, opacity, scales, rotations):
         means3d = means3d.detach().cpu().numpy()
         normals = np.zeros_like(means3d)
-        colors = colors.detach().cpu().numpy()
+        colors = (
+            colors.detach().cpu().numpy()
+            if colors.shape[-1] == 3 else np.random.rand(colors.shape[0], 3))
         opacities = opacity.detach().cpu().numpy()
         scales = np.log(scales.detach().cpu().numpy())
         rotations = rotations.detach().cpu().numpy()
