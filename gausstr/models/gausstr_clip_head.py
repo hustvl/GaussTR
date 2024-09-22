@@ -9,6 +9,7 @@ from mmengine.model import BaseModule
 
 from mmdet3d.registry import MODELS
 
+from .gsplat_rasterization import rasterize_gaussians
 from .utils import cam2world, get_covariance, rotmat_to_quat
 
 
@@ -27,6 +28,7 @@ def flatten_bsn_forward(func, *args, **kwargs):
             kwargs[k] = v.flatten(0, 1)
     outs = func(*args, **kwargs)
     if isinstance(outs, tuple):
+        outs = list(outs)
         for i, out in outs:
             outs[i] = out.reshape(bsn + out.shape[1:])
     else:
@@ -43,7 +45,6 @@ class GaussTRCLIPHead(BaseModule):
                  scale_head,
                  regress_head,
                  image_shape,
-                 rasterizer,
                  voxelizer,
                  depth_limit=51.2,
                  visual_projection=None,
@@ -64,7 +65,6 @@ class GaussTRCLIPHead(BaseModule):
             self.register_buffer('text_proto_embeds',
                                  torch.load(text_protos, map_location='cpu'))
 
-        self.rasterizer = MODELS.build(rasterizer)
         self.voxelizer = MODELS.build(voxelizer)
         self.silog_loss = MODELS.build(dict(type='SiLogLoss', _scope_='mmseg'))
 
@@ -76,7 +76,7 @@ class GaussTRCLIPHead(BaseModule):
                 cam2ego,
                 mode='tensor',
                 imgs=None,
-                **kwargs):
+                img_aug_mat=None):
         bs, n = cam2img.shape[:2]
         x = x.reshape(bs, n, *x.shape[1:])
         ref_pts = (
@@ -90,11 +90,11 @@ class GaussTRCLIPHead(BaseModule):
             ref_pts * torch.tensor(self.image_shape[::-1]).to(x), sample_depth
         ], -1)
 
-        means3d = cam2world(points, cam2img, cam2ego, kwargs['img_aug_mat'])
-        opacities = self.opacity_head(x)
+        means3d = cam2world(points, cam2img, cam2ego, img_aug_mat)
+        opacities = self.opacity_head(x).float()
+        features = self.feature_head(x).float()
         scales = self.scale_head(x) * self.scale_transform(
             sample_depth, cam2img[..., 0, 0]).clamp(1e-6)
-        features = self.feature_head(x).float()
 
         covariances = flatten_bsn_forward(get_covariance, scales,
                                           cam2ego[..., None, :3, :3])
@@ -120,16 +120,22 @@ class GaussTRCLIPHead(BaseModule):
         features = features @ v.to(features)
         features = features.float()
 
-        rendered_imgs, rendered_depth = self.rasterizer(
+        rendered = rasterize_gaussians(
             means3d.flatten(1, 2),
             features.flatten(1, 2),
-            opacities.flatten(1, 2),
-            scales=scales.flatten(1, 2),
-            rotations=rotations.flatten(1, 2),
-            img_shape=(900, 1600),  # TODO
-            cam2img=cam2img,
-            cam2ego=cam2ego,
-            img_aug_mat=kwargs['img_aug_mat'])
+            opacities.squeeze(-1).flatten(1, 2),
+            scales.flatten(1, 2),
+            rotations.flatten(1, 2),
+            cam2img[..., :3, :3],
+            cam2ego,
+            img_aug_mats=img_aug_mat,
+            image_size=(900, 1600),
+            near_plane=0.1,
+            far_plane=100,
+            render_mode='RGB+D',
+            channel_chunk=32)
+        rendered_imgs = rendered[:, :, :-1]
+        rendered_depth = rendered[:, :, -1:]
         # self.visualize_rendered_results((rendered_depth, depth.unsqueeze(2)))
 
         rendered_imgs = rendered_imgs[:, :6].flatten(0, 1)
@@ -144,6 +150,7 @@ class GaussTRCLIPHead(BaseModule):
             rendered_depth.flatten(0, 2),
             depth[:, :6].flatten(0, 1),
             criterion='l1')
+
         losses['loss_cosine'] = F.cosine_embedding_loss(
             rendered_imgs.flatten(0, 1), tgt_feats.flatten(0, 1),
             torch.ones_like(tgt_feats.flatten(0, 1)[:, 0])) * 2

@@ -1,4 +1,3 @@
-from .gaussian_rasterizer import GaussianRasterizer
 from .gaussian_voxelizer import GaussianVoxelizer
 from .gausstr import GaussTR
 from .gausstr_clip_head import GaussTRCLIPHead

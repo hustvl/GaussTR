@@ -62,10 +62,7 @@ model = dict(
             output_dim=3,
             mode='sigmoid',
             range=(1, 16)),
-        regress_head=dict(
-            type='MLP',
-            input_dim=256,
-            output_dim=2),
+        regress_head=dict(type='MLP', input_dim=256, output_dim=2),
         visual_projection=dict(
             type='CLIPProjection',
             _scope_='mmpretrain',
@@ -77,7 +74,6 @@ model = dict(
                 prefix='visual_proj')),
         text_protos='ckpts/text_proto_embeds.pth',
         image_shape=input_size,
-        rasterizer=dict(type='GaussianRasterizer'),
         voxelizer=dict(
             type='GaussianVoxelizer',
             vol_range=[-40, -40, -1, 40, 40, 5.4],
@@ -122,6 +118,6 @@ test_pipeline = [
         ])
 ]
 
-train_dataloader = dict(batch_size=4, dataset=dict(pipeline=train_pipeline))
-val_dataloader = dict(batch_size=4, dataset=dict(pipeline=test_pipeline))
+train_dataloader = dict(batch_size=1, dataset=dict(pipeline=train_pipeline))
+val_dataloader = dict(batch_size=1, dataset=dict(pipeline=test_pipeline))
 test_dataloader = val_dataloader

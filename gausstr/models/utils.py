@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from pyquaternion import Quaternion
+from torch.cuda.amp import autocast
 
 
 def nlc_to_nchw(x, shape):
@@ -28,8 +29,10 @@ def nchw_to_nlc(x):
 
 def flatten_multi_scale_feats(feats):
     feat_flatten = torch.cat([nchw_to_nlc(feat) for feat in feats], dim=1)
-    shapes = torch.stack([torch.tensor(feat.shape[2:])
-                          for feat in feats]).to(feat_flatten.device)
+    shapes = torch.stack([
+        torch.tensor(feat.shape[2:], device=feat_flatten.device)
+        for feat in feats
+    ])
     return feat_flatten, shapes
 
 
@@ -68,10 +71,12 @@ def cam2world(points, cam2img, cam2ego, img_aug_mat=None):
                   @ points.unsqueeze(-1)).squeeze(-1)
 
     cam2img = cam2img[..., :3, :3]
-    points = torch.cat([points[..., :2] * points[..., 2:3], points[..., 2:3]],
-                       dim=-1)
-    combine = cam2ego[..., :3, :3] @ torch.inverse(cam2img)
-    points = combine.unsqueeze(2) @ points.unsqueeze(-1)
+    with autocast(enabled=False):
+        combine = cam2ego[..., :3, :3] @ torch.inverse(cam2img)
+        points = points.float()
+        points = torch.cat(
+            [points[..., :2] * points[..., 2:3], points[..., 2:3]], dim=-1)
+        points = combine.unsqueeze(2) @ points.unsqueeze(-1)
     points = points.squeeze(-1) + cam2ego[..., None, :3, 3]
     return points
 

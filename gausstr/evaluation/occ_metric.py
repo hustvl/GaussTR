@@ -56,8 +56,8 @@ class OccMetric(BaseMetric):
             preds = preds[mask]
             labels = labels[mask]
 
-        preds = preds.flatten().to('cpu').numpy()
-        labels = labels.flatten().to('cpu').numpy()
+        preds = preds.flatten().cpu().numpy()
+        labels = labels.flatten().cpu().numpy()
         hist_ = fast_hist(preds, labels, self.num_classes)
         self.hist += hist_
 

@@ -27,6 +27,7 @@ def flatten_bsn_forward(func, *args, **kwargs):
             kwargs[k] = v.flatten(0, 1)
     outs = func(*args, **kwargs)
     if isinstance(outs, tuple):
+        outs = list(outs)
         for i, out in outs:
             outs[i] = out.reshape(bsn + out.shape[1:])
     else:
@@ -45,8 +46,8 @@ class MLP(nn.Module):
                  mode=None,
                  range=None):
         super().__init__()
-        hidden_dim = input_dim * 4 if hidden_dim is None else hidden_dim
-        output_dim = input_dim if output_dim is None else output_dim
+        hidden_dim = hidden_dim or input_dim * 4
+        output_dim = output_dim or input_dim
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
         self.layers = nn.ModuleList(

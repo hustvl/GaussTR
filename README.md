@@ -34,6 +34,8 @@ the folder is arranged as:
 
 ## Usage
 
+https://github.com/open-mmlab/mmpretrain/pull/1737
+
 ### Training
 
 ```
