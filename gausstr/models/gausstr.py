@@ -5,21 +5,34 @@ from mmengine.model import BaseModel, ModuleList
 
 from mmdet3d.registry import MODELS
 
+from .utils import flatten_multi_scale_feats
+
 
 @MODELS.register_module()
 class GaussTR(BaseModel):
 
-    def __init__(self, backbone, neck, encoder, decoder, num_queries,
-                 gauss_head, positional_encoding, **kwargs):
+    def __init__(self,
+                 backbone,
+                 neck,
+                 decoder,
+                 num_queries,
+                 gauss_head,
+                 encoder=None,
+                 positional_encoding=None,
+                 custom_attn_type=None,
+                 **kwargs):
         super().__init__(**kwargs)
         self.backbone = MODELS.build(backbone)
         self.neck = MODELS.build(neck)
-        self.encoder = MODELS.build(encoder)
         self.decoder = MODELS.build(decoder)
-        self.positional_encoding = MODELS.build(positional_encoding)
-        self.level_embed = nn.Parameter(
-            torch.Tensor(encoder.layer_cfg.self_attn_cfg.num_levels,
-                         encoder.layer_cfg.self_attn_cfg.embed_dims))
+
+        if encoder is not None:
+            self.encoder = MODELS.build(encoder)
+            self.positional_encoding = MODELS.build(positional_encoding)
+            attn_cfg = encoder.layer_cfg.self_attn_cfg
+            self.level_embed = nn.Parameter(
+                torch.Tensor(attn_cfg.num_levels, attn_cfg.embed_dims))
+
         self.query_embeds = nn.Embedding(
             num_queries, decoder.layer_cfg.self_attn_cfg.embed_dims)
         self.gauss_heads = ModuleList(
@@ -27,7 +40,9 @@ class GaussTR(BaseModel):
 
         self.frozen_backbone = all(not param.requires_grad
                                    for param in self.backbone.parameters())
-        self.return_values = backbone.out_indices == -2
+        if custom_attn_type is not None:
+            assert backbone.out_indices == -2
+        self.custom_attn_type = custom_attn_type
 
     def prepare_inputs(self, inputs_dict, data_samples):
         num_views = data_samples[0].num_views
@@ -76,14 +91,18 @@ class GaussTR(BaseModel):
                 self.backbone.eval()
             with torch.no_grad():
                 x = self.backbone(inputs['imgs'].flatten(0, 1))[0]
-                if self.return_values:
-                    x = self.forward_values(x)
+                if self.custom_attn_type is not None:
+                    x = self.custom_attn(x, self.custom_attn_type)
         else:
             x = self.backbone(inputs['imgs'].flatten(0, 1))[0]
         feats = self.neck(x)
 
-        encoder_inputs, decoder_inputs = self.pre_transformer(feats)
-        feats = self.forward_encoder(**encoder_inputs)
+        if hasattr(self, 'encoder'):
+            encoder_inputs, decoder_inputs = self.pre_transformer(feats)
+            feats = self.forward_encoder(**encoder_inputs)
+        else:
+            decoder_inputs = self.pre_transformer(feats)
+            feats = flatten_multi_scale_feats(feats)[0]
         decoder_inputs.update(self.pre_decoder(feats))
         decoder_outputs = self.forward_decoder(
             reg_branches=[h.regress_head for h in self.gauss_heads],
@@ -108,53 +127,54 @@ class GaussTR(BaseModel):
                 losses[f'{k}/{i}'] = v
         return losses
 
-    def forward_values(self, x):
+    def custom_attn(self, x, attn_type):
         B, C, H, W = x.shape
+        N = H * W
         x = x.flatten(2).mT
         last_layer = self.backbone.layers[-1]
         qkv = last_layer.attn.qkv(last_layer.ln1(x)).reshape(
-            B, H * W, 3, last_layer.attn.embed_dims)
-        v = last_layer.attn.proj(qkv[:, :, 2])
-        v += x
-        v = last_layer.ffn(last_layer.ln2(v), identity=v)
+            B, N, 3, last_layer.attn.num_heads,
+            last_layer.attn.head_dims).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
 
-        if self.backbone.final_norm:
-            v = self.backbone.ln1(v)
-        return v.reshape(B, H, W, C).permute(0, 3, 1, 2)
+        if attn_type == 'maskclip':
+            v = last_layer.attn.proj(v.flatten(-2)) + x
+            v = last_layer.ffn(last_layer.ln2(v), identity=v)
+            if self.backbone.final_norm:
+                x = self.backbone.ln1(v)
+        if attn_type == 'clearclip':
+            x = last_layer.attn.scaled_dot_product_attention(q, q, v)
+            x = x.transpose(1, 2).reshape(B, N, last_layer.attn.embed_dims)
+            x = last_layer.attn.proj(x)
+            if last_layer.attn.v_shortcut:
+                x = v.squeeze(1) + x
+        return x.reshape(B, H, W, C).permute(0, 3, 1, 2)
 
     def pre_transformer(self, mlvl_feats):
         batch_size = mlvl_feats[0].size(0)
 
         mlvl_masks = []
-        mlvl_pos_embeds = []
         for feat in mlvl_feats:
             mlvl_masks.append(None)
-            mlvl_pos_embeds.append(self.positional_encoding(None, input=feat))
 
         feat_flatten = []
-        lvl_pos_embed_flatten = []
         mask_flatten = []
         spatial_shapes = []
-        for lvl, (feat, mask, pos_embed) in enumerate(
-                zip(mlvl_feats, mlvl_masks, mlvl_pos_embeds)):
+        for lvl, (feat, mask) in enumerate(zip(mlvl_feats, mlvl_masks)):
             batch_size, c, h, w = feat.shape
             spatial_shape = torch._shape_as_tensor(feat)[2:].to(feat.device)
             # [bs, c, h_lvl, w_lvl] -> [bs, h_lvl*w_lvl, c]
             feat = feat.view(batch_size, c, -1).permute(0, 2, 1)
-            pos_embed = pos_embed.view(batch_size, c, -1).permute(0, 2, 1)
-            lvl_pos_embed = pos_embed + self.level_embed[lvl].view(1, 1, -1)
             # [bs, h_lvl, w_lvl] -> [bs, h_lvl*w_lvl]
             if mask is not None:
                 mask = mask.flatten(1)
 
             feat_flatten.append(feat)
-            lvl_pos_embed_flatten.append(lvl_pos_embed)
             mask_flatten.append(mask)
             spatial_shapes.append(spatial_shape)
 
         # (bs, num_feat_points, dim)
         feat_flatten = torch.cat(feat_flatten, 1)
-        lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1)
         # (bs, num_feat_points), where num_feat_points = sum_lvl(h_lvl*w_lvl)
         if mask_flatten[0] is not None:
             mask_flatten = torch.cat(mask_flatten, 1)
@@ -173,15 +193,31 @@ class GaussTR(BaseModel):
             valid_ratios = mlvl_feats[0].new_ones(batch_size, len(mlvl_feats),
                                                   2)
 
+        decoder_inputs_dict = dict(
+            memory_mask=mask_flatten,
+            spatial_shapes=spatial_shapes,
+            level_start_index=level_start_index,
+            valid_ratios=valid_ratios)
+        if not hasattr(self, 'encoder'):
+            return decoder_inputs_dict
+
+        mlvl_pos_embeds = []
+        for feat in mlvl_feats:
+            mlvl_pos_embeds.append(self.positional_encoding(None, input=feat))
+
+        lvl_pos_embed_flatten = []
+        for lvl, (feat, pos_embed) in enumerate(
+                zip(mlvl_feats, mlvl_pos_embeds)):
+            pos_embed = pos_embed.view(batch_size, c, -1).permute(0, 2, 1)
+            lvl_pos_embed = pos_embed + self.level_embed[lvl].view(1, 1, -1)
+            lvl_pos_embed_flatten.append(lvl_pos_embed)
+        # (bs, num_feat_points, dim)
+        lvl_pos_embed_flatten = torch.cat(lvl_pos_embed_flatten, 1)
+
         encoder_inputs_dict = dict(
             feat=feat_flatten,
             feat_mask=mask_flatten,
             feat_pos=lvl_pos_embed_flatten,
-            spatial_shapes=spatial_shapes,
-            level_start_index=level_start_index,
-            valid_ratios=valid_ratios)
-        decoder_inputs_dict = dict(
-            memory_mask=mask_flatten,
             spatial_shapes=spatial_shapes,
             level_start_index=level_start_index,
             valid_ratios=valid_ratios)

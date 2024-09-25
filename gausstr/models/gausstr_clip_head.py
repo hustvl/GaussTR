@@ -3,6 +3,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from mmdet.models import inverse_sigmoid
 from mmengine.model import BaseModule
@@ -11,6 +12,40 @@ from mmdet3d.registry import MODELS
 
 from .gsplat_rasterization import rasterize_gaussians
 from .utils import cam2world, get_covariance, rotmat_to_quat
+
+
+@MODELS.register_module()
+class MLP(nn.Module):
+
+    def __init__(self,
+                 input_dim,
+                 hidden_dim=None,
+                 output_dim=None,
+                 num_layers=2,
+                 mode=None,
+                 range=None):
+        super().__init__()
+        hidden_dim = hidden_dim or input_dim * 4
+        output_dim = output_dim or input_dim
+        self.num_layers = num_layers
+        h = [hidden_dim] * (num_layers - 1)
+        self.layers = nn.ModuleList(
+            nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
+        self.activation = activation
+        self.range = range
+        self.mode = mode
+
+    def forward(self, x):
+        for i, layer in enumerate(self.layers):
+            x = getattr(F, self.activation)(
+                layer(x)) if i < self.num_layers - 1 else layer(x)
+
+        if self.mode is not None:
+            if self.mode == 'sigmoid':
+                x = F.sigmoid(x)
+            if self.range is not None:
+                x = self.range[0] + (self.range[1] - self.range[0]) * x
+        return x
 
 
 def flatten_bsn_forward(func, *args, **kwargs):
@@ -76,7 +111,8 @@ class GaussTRCLIPHead(BaseModule):
                 cam2ego,
                 mode='tensor',
                 imgs=None,
-                img_aug_mat=None):
+                img_aug_mat=None,
+                ego2global=None):
         bs, n = cam2img.shape[:2]
         x = x.reshape(bs, n, *x.shape[1:])
         ref_pts = (
