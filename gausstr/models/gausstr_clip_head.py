@@ -22,6 +22,7 @@ class MLP(nn.Module):
                  hidden_dim=None,
                  output_dim=None,
                  num_layers=2,
+                 activation='relu',
                  mode=None,
                  range=None):
         super().__init__()
@@ -79,6 +80,7 @@ class GaussTRCLIPHead(BaseModule):
                  feature_head,
                  scale_head,
                  regress_head,
+                 reduce_dims,
                  image_shape,
                  voxelizer,
                  depth_limit=51.2,
@@ -89,6 +91,7 @@ class GaussTRCLIPHead(BaseModule):
         self.feature_head = MODELS.build(feature_head)
         self.scale_head = MODELS.build(scale_head)
         self.regress_head = MODELS.build(regress_head)
+        self.reduce_dims = reduce_dims
         self.image_shape = image_shape
         self.depth_limit = depth_limit
 
@@ -151,7 +154,7 @@ class GaussTRCLIPHead(BaseModule):
         tgt_feats = imgs.flatten(2).mT
         tgt_feats = self.visual_projection(tgt_feats)[0]
         u, s, v = torch.pca_lowrank(
-            tgt_feats.flatten(0, 1).double(), q=32, niter=4)
+            tgt_feats.flatten(0, 1).double(), q=self.reduce_dims, niter=4)
         tgt_feats = tgt_feats @ v.to(tgt_feats)
         features = features @ v.to(features)
         features = features.float()
@@ -162,7 +165,7 @@ class GaussTRCLIPHead(BaseModule):
             opacities.squeeze(-1).flatten(1, 2),
             scales.flatten(1, 2),
             rotations.flatten(1, 2),
-            cam2img[..., :3, :3],
+            cam2img,
             cam2ego,
             img_aug_mats=img_aug_mat,
             image_size=(900, 1600),
@@ -174,16 +177,16 @@ class GaussTRCLIPHead(BaseModule):
         rendered_depth = rendered[:, :, -1:]
         # self.visualize_rendered_results((rendered_depth, depth.unsqueeze(2)))
 
-        rendered_imgs = rendered_imgs[:, :6].flatten(0, 1)
+        rendered_imgs = rendered_imgs.flatten(0, 1)
         rendered_imgs = F.avg_pool2d(rendered_imgs, 16)
         rendered_imgs = rendered_imgs.flatten(2).mT
 
         depth = torch.where(depth < self.depth_limit, depth, 1e-3)
         losses = {}
         losses['loss_depth'] = self.depth_loss(
-            rendered_depth.flatten(0, 2), depth[:, :6].flatten(0, 1))
+            rendered_depth.flatten(0, 2), depth.flatten(0, 1))
         losses['mae_depth'] = self.depth_loss(
-            rendered_depth.flatten(0, 2),
+            rendered_depth[:, :6].flatten(0, 2),
             depth[:, :6].flatten(0, 1),
             criterion='l1')
 
@@ -222,7 +225,7 @@ class GaussTRCLIPHead(BaseModule):
         img_aug_mat = img_aug_mat.unsqueeze(1).expand(-1, 3, -1, -1,
                                                       -1).flatten(1, 2)
         return dict(
-            cam2img=cam2img, cam2ego=cam2keyego, img_aug_mat=img_aug_mat)
+            cam2imgs=cam2img, cam2egos=cam2keyego, img_aug_mats=img_aug_mat)
 
     def visualize_rendered_results(self, results):
         # (bs, t*n, 3/1, h, w)

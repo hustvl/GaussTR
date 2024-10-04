@@ -18,7 +18,7 @@ class GaussTR(BaseModel):
                  num_queries,
                  gauss_head,
                  encoder=None,
-                 positional_encoding=None,
+                 pos_embed=None,
                  custom_attn_type=None,
                  **kwargs):
         super().__init__(**kwargs)
@@ -28,7 +28,7 @@ class GaussTR(BaseModel):
 
         if encoder is not None:
             self.encoder = MODELS.build(encoder)
-            self.positional_encoding = MODELS.build(positional_encoding)
+            self.pos_embed = MODELS.build(pos_embed)
             attn_cfg = encoder.layer_cfg.self_attn_cfg
             self.level_embed = nn.Parameter(
                 torch.Tensor(attn_cfg.num_levels, attn_cfg.embed_dims))
@@ -46,8 +46,7 @@ class GaussTR(BaseModel):
 
     def prepare_inputs(self, inputs_dict, data_samples):
         num_views = data_samples[0].num_views
-        imgs = inputs_dict['imgs']
-        inputs_dict['imgs'] = imgs[:, :num_views]
+        inputs = inputs_dict['imgs']
 
         cam2img = []
         cam2ego = []
@@ -79,13 +78,14 @@ class GaussTR(BaseModel):
             if k in ('imgs', ) or v is None:
                 continue
             if isinstance(v[0], torch.Tensor):
-                data_samples[k] = torch.stack(v).to(imgs)
+                data_samples[k] = torch.stack(v).to(inputs)
             else:
-                data_samples[k] = torch.from_numpy(np.stack(v)).to(imgs)
-        return inputs_dict, data_samples
+                data_samples[k] = torch.from_numpy(np.stack(v)).to(inputs)
+        return inputs, data_samples
 
     def forward(self, inputs, data_samples, mode='loss'):
         inputs, data_samples = self.prepare_inputs(inputs, data_samples)
+        inputs = inputs['imgs'].flatten(0, 1)
         if self.frozen_backbone:
             if self.backbone.training:
                 self.backbone.eval()
@@ -94,7 +94,7 @@ class GaussTR(BaseModel):
                 if self.custom_attn_type is not None:
                     x = self.custom_attn(x, self.custom_attn_type)
         else:
-            x = self.backbone(inputs['imgs'].flatten(0, 1))[0]
+            x = self.backbone(inputs)[0]
         feats = self.neck(x)
 
         if hasattr(self, 'encoder'):
@@ -121,7 +121,6 @@ class GaussTR(BaseModel):
                 query[i],
                 reference_points[i],
                 mode=mode,
-                imgs=x,
                 **data_samples)
             for k, v in loss.items():
                 losses[f'{k}/{i}'] = v
@@ -138,11 +137,11 @@ class GaussTR(BaseModel):
         q, k, v = qkv[0], qkv[1], qkv[2]
 
         if attn_type == 'maskclip':
-            v = last_layer.attn.proj(v.flatten(-2)) + x
+            v = last_layer.attn.proj(v.transpose(1, 2).flatten(2)) + x
             v = last_layer.ffn(last_layer.ln2(v), identity=v)
             if self.backbone.final_norm:
                 x = self.backbone.ln1(v)
-        if attn_type == 'clearclip':
+        elif attn_type == 'clearclip':
             x = last_layer.attn.scaled_dot_product_attention(q, q, v)
             x = x.transpose(1, 2).reshape(B, N, last_layer.attn.embed_dims)
             x = last_layer.attn.proj(x)
@@ -203,11 +202,12 @@ class GaussTR(BaseModel):
 
         mlvl_pos_embeds = []
         for feat in mlvl_feats:
-            mlvl_pos_embeds.append(self.positional_encoding(None, input=feat))
+            mlvl_pos_embeds.append(self.pos_embed(None, input=feat))
 
         lvl_pos_embed_flatten = []
         for lvl, (feat, pos_embed) in enumerate(
                 zip(mlvl_feats, mlvl_pos_embeds)):
+            batch_size, c, h, w = feat.shape
             pos_embed = pos_embed.view(batch_size, c, -1).permute(0, 2, 1)
             lvl_pos_embed = pos_embed + self.level_embed[lvl].view(1, 1, -1)
             lvl_pos_embed_flatten.append(lvl_pos_embed)

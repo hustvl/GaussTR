@@ -160,7 +160,8 @@ class GaussTRDecoder(DetrTransformerDecoder):
                     reference_points[:, :, None] * valid_ratios[:, None]
 
             query_sine_embed = coordinate_to_encoding(
-                reference_points_input[:, :, 0, :])
+                reference_points_input[:, :, 0, :],
+                query.size(-1) // 2)
             query_pos = self.ref_point_head(query_sine_embed)
 
             query = layer(
@@ -245,15 +246,6 @@ class GaussTRDecoderLayer(DetrTransformerDecoderLayer):
             Tensor: forwarded results, has shape (bs, num_queries, dim).
         """
 
-        query = self.self_attn(
-            query=query,
-            key=query,
-            value=query,
-            query_pos=query_pos,
-            key_pos=query_pos,
-            attn_mask=self_attn_mask,
-            **kwargs)
-        query = self.norms[0](query)
         query = self.cross_attn(
             query=query,
             key=key,
@@ -262,6 +254,15 @@ class GaussTRDecoderLayer(DetrTransformerDecoderLayer):
             key_pos=key_pos,
             attn_mask=cross_attn_mask,
             key_padding_mask=key_padding_mask,
+            **kwargs)
+        query = self.norms[0](query)
+        query = self.self_attn(
+            query=query,
+            key=query,
+            value=query,
+            query_pos=query_pos,
+            key_pos=query_pos,
+            attn_mask=self_attn_mask,
             **kwargs)
         query = self.norms[1](query)
         query = self.ffn(query)

@@ -3,10 +3,10 @@ _base_ = 'mmdet3d::_base_/default_runtime.py'
 custom_imports = dict(imports=['gausstr'])
 
 input_size = (432, 768)
+embed_dims = 256
 
 model = dict(
     type='GaussTR',
-    _delete_=True,
     num_queries=100,
     data_preprocessor=dict(
         type='Det3DDataPreprocessor',
@@ -27,29 +27,30 @@ model = dict(
     neck=dict(
         type='ViTDetFPN',
         in_channels=768,
-        out_channels=256,
+        out_channels=embed_dims,
         norm_cfg=dict(type='LN2d')),
     decoder=dict(
         type='GaussTRDecoder',
         num_layers=3,
         return_intermediate=True,
         layer_cfg=dict(
-            self_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
-            cross_attn_cfg=dict(embed_dims=256, num_levels=4),
-            ffn_cfg=dict(embed_dims=256, feedforward_channels=2048)),
+            self_attn_cfg=dict(
+                embed_dims=embed_dims, num_heads=8, dropout=0.0),
+            cross_attn_cfg=dict(embed_dims=embed_dims, num_levels=4),
+            ffn_cfg=dict(embed_dims=embed_dims, feedforward_channels=2048)),
         post_norm_cfg=None),
     gauss_head=dict(
         type='GaussTRCLIPHead',
         opacity_head=dict(
-            type='MLP', input_dim=256, output_dim=1, mode='sigmoid'),
-        feature_head=dict(type='MLP', input_dim=256, output_dim=512),
+            type='MLP', input_dim=embed_dims, output_dim=1, mode='sigmoid'),
+        feature_head=dict(type='MLP', input_dim=embed_dims, output_dim=512),
         scale_head=dict(
             type='MLP',
-            input_dim=256,
+            input_dim=embed_dims,
             output_dim=3,
             mode='sigmoid',
             range=(1, 16)),
-        regress_head=dict(type='MLP', input_dim=256, output_dim=2),
+        regress_head=dict(type='MLP', input_dim=embed_dims, output_dim=2),
         visual_projection=dict(
             type='CLIPProjection',
             _scope_='mmpretrain',
@@ -169,6 +170,3 @@ param_scheduler = [
     dict(type='LinearLR', start_factor=1e-3, begin=0, end=200, by_epoch=False),
     dict(type='ConstantLR', factor=1)  # TODO: MultiStepLR
 ]
-
-default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=1))  # TODO
-
