@@ -176,7 +176,7 @@ class GaussTRDecoder(DetrTransformerDecoder):
                 **kwargs)
 
             if reg_branches is not None:
-                tmp_reg_preds = reg_branches[lid](query)
+                tmp_reg_preds = reg_branches[lid](query)[..., :2]
                 new_reference_points = tmp_reg_preds + inverse_sigmoid(
                     reference_points)
                 new_reference_points = new_reference_points.sigmoid()

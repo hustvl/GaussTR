@@ -12,18 +12,6 @@ model = dict(
         type='Det3DDataPreprocessor',
         mean=[123.675, 116.28, 103.53],
         std=[58.395, 57.12, 57.375]),
-    backbone=dict(
-        type='VisionTransformer',
-        _scope_='mmpretrain',
-        arch='b',
-        out_indices=-2,
-        out_type='featmap',
-        pre_norm=True,
-        frozen_stages=12,
-        init_cfg=dict(
-            type='Pretrained',
-            checkpoint='ckpts/clip-vit-b-p16.pth',
-            prefix='visual')),
     neck=dict(
         type='ViTDetFPN',
         in_channels=768,
@@ -39,7 +27,6 @@ model = dict(
             cross_attn_cfg=dict(embed_dims=embed_dims, num_levels=4),
             ffn_cfg=dict(embed_dims=embed_dims, feedforward_channels=2048)),
         post_norm_cfg=None),
-    custom_attn_type='maskclip',
     gauss_head=dict(
         type='GaussTRCLIPHead',
         opacity_head=dict(
@@ -52,15 +39,6 @@ model = dict(
             mode='sigmoid',
             range=(1, 16)),
         regress_head=dict(type='MLP', input_dim=embed_dims, output_dim=3),
-        projection=dict(
-            type='CLIPProjection',
-            _scope_='mmpretrain',
-            in_channels=768,
-            out_channels=512,
-            init_cfg=dict(
-                type='Pretrained',
-                checkpoint='ckpts/clip-vit-b-p16.pth',
-                prefix='visual_proj')),
         text_protos='ckpts/text_proto_embeds_c21_w_prompt.pth',
         reduce_dims=128,
         image_shape=input_size,
@@ -98,7 +76,7 @@ train_pipeline = [
         keys=['img'],
         meta_keys=[
             'cam2img', 'cam2ego', 'ego2global', 'img_aug_mat', 'sample_idx',
-            'num_views', 'img_path', 'depth'
+            'num_views', 'img_path', 'depth', 'feats'
         ])
 ]
 test_pipeline = [
@@ -115,7 +93,7 @@ test_pipeline = [
         keys=['img', 'gt_semantic_seg'],
         meta_keys=[
             'cam2img', 'cam2ego', 'ego2global', 'img_aug_mat', 'sample_idx',
-            'num_views', 'img_path', 'depth', 'mask_camera'
+            'num_views', 'img_path', 'depth', 'feats', 'mask_camera'
         ])
 ]
 

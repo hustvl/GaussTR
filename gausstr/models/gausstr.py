@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -12,19 +14,29 @@ from .utils import flatten_multi_scale_feats
 class GaussTR(BaseModel):
 
     def __init__(self,
-                 backbone,
                  neck,
                  decoder,
                  num_queries,
                  gauss_head,
+                 backbone=None,
+                 projection=None,
                  encoder=None,
                  pos_embed=None,
                  custom_attn_type=None,
                  **kwargs):
         super().__init__(**kwargs)
-        self.backbone = MODELS.build(backbone)
+        if backbone is not None:
+            self.backbone = MODELS.build(backbone)
+            self.frozen_backbone = all(not param.requires_grad
+                                       for param in self.backbone.parameters())
+            if custom_attn_type is not None:
+                assert backbone.out_indices == -2
+            self.custom_attn_type = custom_attn_type
+        if projection is not None:
+            self.projection = MODELS.build(projection)
+            if 'init_cfg' in projection and projection.init_cfg.type == 'Pretrained':
+                self.projection.requires_grad_(False)
         self.neck = MODELS.build(neck)
-        self.decoder = MODELS.build(decoder)
 
         if encoder is not None:
             self.encoder = MODELS.build(encoder)
@@ -32,17 +44,12 @@ class GaussTR(BaseModel):
             attn_cfg = encoder.layer_cfg.self_attn_cfg
             self.level_embed = nn.Parameter(
                 torch.Tensor(attn_cfg.num_levels, attn_cfg.embed_dims))
+        self.decoder = MODELS.build(decoder)
 
         self.query_embeds = nn.Embedding(
             num_queries, decoder.layer_cfg.self_attn_cfg.embed_dims)
         self.gauss_heads = ModuleList(
             [MODELS.build(gauss_head) for _ in range(decoder.num_layers)])
-
-        self.frozen_backbone = all(not param.requires_grad
-                                   for param in self.backbone.parameters())
-        if custom_attn_type is not None:
-            assert backbone.out_indices == -2
-        self.custom_attn_type = custom_attn_type
 
     def prepare_inputs(self, inputs_dict, data_samples):
         num_views = data_samples[0].num_views
@@ -53,6 +60,7 @@ class GaussTR(BaseModel):
         ego2global = []
         img_aug_mat = []
         depth = []
+        feats = []
 
         for i in range(len(data_samples)):
             data_samples[i].set_metainfo(
@@ -67,15 +75,20 @@ class GaussTR(BaseModel):
                     {'img_aug_mat': data_samples[i].img_aug_mat[:num_views]})
                 img_aug_mat.append(data_samples[i].img_aug_mat)
             depth.append(data_samples[i].depth)
+            if hasattr(data_samples[i], 'feats'):
+                feats.append(data_samples[i].feats)
 
         data_samples = dict(
             depth=depth,
             cam2img=cam2img,
             cam2ego=cam2ego,
+            num_views=num_views,
             ego2global=ego2global,
             img_aug_mat=img_aug_mat if img_aug_mat else None)
+        if feats:
+            data_samples['feats'] = feats
         for k, v in data_samples.items():
-            if k in ('imgs', ) or v is None:
+            if isinstance(v, torch.Tensor) or not isinstance(v, Iterable):
                 continue
             if isinstance(v[0], torch.Tensor):
                 data_samples[k] = torch.stack(v).to(inputs)
@@ -85,16 +98,29 @@ class GaussTR(BaseModel):
 
     def forward(self, inputs, data_samples, mode='loss'):
         inputs, data_samples = self.prepare_inputs(inputs, data_samples)
-        inputs = inputs['imgs'].flatten(0, 1)
-        if self.frozen_backbone:
-            if self.backbone.training:
-                self.backbone.eval()
-            with torch.no_grad():
-                x = self.backbone(inputs['imgs'].flatten(0, 1))[0]
-                if self.custom_attn_type is not None:
-                    x = self.custom_attn(x, self.custom_attn_type)
+        bs, n = inputs.shape[:2]
+        if hasattr(self, 'backbone'):
+            inputs = inputs.flatten(0, 1)
+            if self.frozen_backbone:
+                if self.backbone.training:
+                    self.backbone.eval()
+                with torch.no_grad():
+                    x = self.backbone(inputs)[0]
+                    if self.custom_attn_type is not None:
+                        x = self.custom_attn(x, self.custom_attn_type)
+            else:
+                x = self.backbone(inputs)[0]
         else:
-            x = self.backbone(inputs)[0]
+            x = data_samples.pop('feats').flatten(0, 1)
+
+        if hasattr(self, 'projection'):
+            x = self.projection(x.permute(0, 2, 3, 1))[0]
+            x = x.permute(0, 3, 1, 2)
+        data_samples['tgt_imgs'] = x
+        if n > data_samples['num_views']:
+            x = x.reshape(bs, n, *x.shape[1:])
+            x = x[:, :data_samples['num_views']].flatten(0, 1)
+
         feats = self.neck(x)
 
         if hasattr(self, 'encoder'):
@@ -118,10 +144,7 @@ class GaussTR(BaseModel):
         losses = {}
         for i, gauss_head in enumerate(self.gauss_heads):
             loss = gauss_head(
-                query[i],
-                reference_points[i],
-                mode=mode,
-                **data_samples)
+                query[i], reference_points[i], mode=mode, **data_samples)
             for k, v in loss.items():
                 losses[f'{k}/{i}'] = v
         return losses

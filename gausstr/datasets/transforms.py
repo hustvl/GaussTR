@@ -380,3 +380,22 @@ class LoadDepthPreds(BaseTransform):
 
         results['depth'] = torch.stack(depths)
         return results
+
+
+@TRANSFORMS.register_module()
+class LoadPrecompFeats(BaseTransform):
+
+    def __init__(self, root_dir):
+        self.root_dir = root_dir
+
+    def transform(self, results):
+        feats = []
+        for i, filename in enumerate(results['filename']):
+            feat = np.load(
+                os.path.join(self.root_dir,
+                             filename.split('/')[-1].split('.')[0] + '.npy'))
+            feat = torch.from_numpy(feat)
+            feats.append(feat)
+
+        results['feats'] = torch.stack(feats)
+        return results

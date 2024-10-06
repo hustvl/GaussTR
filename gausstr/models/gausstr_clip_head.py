@@ -11,7 +11,7 @@ from mmengine.model import BaseModule
 from mmdet3d.registry import MODELS
 
 from .gsplat_rasterization import rasterize_gaussians
-from .utils import cam2world, get_covariance, rotmat_to_quat
+from .utils import OCC3D_CATEGORIES, cam2world, get_covariance, rotmat_to_quat
 
 
 @MODELS.register_module()
@@ -72,6 +72,28 @@ def flatten_bsn_forward(func, *args, **kwargs):
     return outs
 
 
+def prompt_denoising(logits, logit_scale=100, pd_threshold=0.1):
+    probs = logits.softmax(-1)
+    probs_ = F.softmax(logits * logit_scale, -1)
+    max_cls_conf = probs_.flatten(1, 3).max(1)[0]
+    selected_cls = (max_cls_conf < pd_threshold)[:, None, None,
+                                                 None].expand(*probs.shape)
+    probs[selected_cls] = 0
+    return probs
+
+
+def merge_probs(probs, categories):
+    merged_probs = []
+    i = 0
+    for cats in categories:
+        p = probs[..., i:i + len(cats)]
+        i += len(cats)
+        if len(cats) > 1:
+            p = p.max(-1, keepdim=True)[0]
+        merged_probs.append(p)
+    return torch.cat(merged_probs, dim=-1)
+
+
 @MODELS.register_module()
 class GaussTRCLIPHead(BaseModule):
 
@@ -84,8 +106,9 @@ class GaussTRCLIPHead(BaseModule):
                  image_shape,
                  voxelizer,
                  depth_limit=51.2,
-                 visual_projection=None,
-                 text_protos=None):
+                 projection=None,
+                 text_protos=None,
+                 prompt_denoising=True):
         super().__init__()
         self.opacity_head = MODELS.build(opacity_head)
         self.feature_head = MODELS.build(feature_head)
@@ -94,11 +117,12 @@ class GaussTRCLIPHead(BaseModule):
         self.reduce_dims = reduce_dims
         self.image_shape = image_shape
         self.depth_limit = depth_limit
+        self.prompt_denoising = prompt_denoising
 
-        if visual_projection is not None:
-            self.visual_projection = MODELS.build(visual_projection)
-            if 'init_cfg' in visual_projection and visual_projection.init_cfg.type == 'Pretrained':
-                self.visual_projection.requires_grad_(False)
+        if projection is not None:
+            self.projection = MODELS.build(projection)
+            if 'init_cfg' in projection and projection.init_cfg.type == 'Pretrained':
+                self.projection.requires_grad_(False)
         if text_protos is not None:
             self.register_buffer('text_proto_embeds',
                                  torch.load(text_protos, map_location='cpu'))
@@ -113,23 +137,27 @@ class GaussTRCLIPHead(BaseModule):
                 cam2img,
                 cam2ego,
                 mode='tensor',
-                imgs=None,
+                num_views=6,
+                tgt_imgs=None,
                 img_aug_mat=None,
                 ego2global=None):
         bs, n = cam2img.shape[:2]
         x = x.reshape(bs, n, *x.shape[1:])
+
+        deltas = self.regress_head(x)
         ref_pts = (
-            self.regress_head(x) +
+            deltas[..., :2] +
             inverse_sigmoid(ref_pts.reshape(*x.shape[:-1], -1))).sigmoid()
         depth = depth.clamp(max=self.depth_limit)
         sample_depth = flatten_bsn_forward(F.grid_sample, depth[:, :n, None],
                                            ref_pts.unsqueeze(2) * 2 - 1)
         sample_depth = sample_depth[:, :, 0, 0, :, None]
         points = torch.cat([
-            ref_pts * torch.tensor(self.image_shape[::-1]).to(x), sample_depth
+            ref_pts * torch.tensor(self.image_shape[::-1]).to(x),
+            sample_depth * (1 + deltas[..., 2:3])
         ], -1)
-
         means3d = cam2world(points, cam2img, cam2ego, img_aug_mat)
+
         opacities = self.opacity_head(x).float()
         features = self.feature_head(x).float()
         scales = self.scale_head(x) * self.scale_transform(
@@ -142,17 +170,26 @@ class GaussTRCLIPHead(BaseModule):
 
         if mode == 'predict':
             features = features @ self.text_proto_embeds
-
             density, grid_feats = self.voxelizer(
                 means3d=means3d.flatten(1, 2),
                 opacities=opacities.flatten(1, 2),
                 features=features.flatten(1, 2).softmax(-1),
                 covariances=covariances.flatten(1, 2))
-            pred = torch.where(pred.squeeze(-1) > 0.0625, 1, 17)  # 4e-2 ~ 1/8
-            return pred
+            if self.prompt_denoising:
+                probs = prompt_denoising(grid_feats)
+            else:
+                probs = grid_feats.softmax(-1)
 
-        tgt_feats = imgs.flatten(2).mT
-        tgt_feats = self.visual_projection(tgt_feats)[0]
+            probs = merge_probs(probs, OCC3D_CATEGORIES)
+            preds = probs.argmax(-1)
+            preds += (preds > 10) * 1 + 1
+            preds = torch.where(density.squeeze(-1) > 4e-2, preds, 17)
+            return preds
+
+        tgt_feats = tgt_imgs.flatten(2).mT
+        if hasattr(self, 'projection'):
+            tgt_feats = self.projection(tgt_feats)[0]
+
         u, s, v = torch.pca_lowrank(
             tgt_feats.flatten(0, 1).double(), q=self.reduce_dims, niter=4)
         tgt_feats = tgt_feats @ v.to(tgt_feats)
@@ -186,8 +223,8 @@ class GaussTRCLIPHead(BaseModule):
         losses['loss_depth'] = self.depth_loss(
             rendered_depth.flatten(0, 2), depth.flatten(0, 1))
         losses['mae_depth'] = self.depth_loss(
-            rendered_depth[:, :6].flatten(0, 2),
-            depth[:, :6].flatten(0, 1),
+            rendered_depth[:, :num_views].flatten(0, 2),
+            depth[:, :num_views].flatten(0, 1),
             criterion='l1')
 
         losses['loss_cosine'] = F.cosine_embedding_loss(

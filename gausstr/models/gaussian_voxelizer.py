@@ -33,7 +33,7 @@ def splat_into_3d(grid_coords,
         maha_dist = diff.unsqueeze(2) @ covariances[:, g, None].inverse()
         maha_dist = (maha_dist @ diff.unsqueeze(-1)).squeeze(-1)
 
-        mask = maha_dist <= 4
+        mask = maha_dist <= 7.5
         grid_cnts += mask
         denom = grid_cnts.clamp(1e-6)
         density = opacities[:, g, None] * torch.exp(-0.5 * maha_dist)
@@ -41,8 +41,8 @@ def splat_into_3d(grid_coords,
 
         if features is None:
             continue
-        feats = opacities[:, g, None] * features[:, g, None] * torch.exp(
-            -0.5 * maha_dist)
+        # NOTE: w/o dist. decay `* torch.exp(-0.5 * maha_dist)`
+        feats = opacities[:, g, None] * features[:, g, None]
         grid_feats += mask * (feats - grid_feats) / denom
     return (grid_density, grid_feats) if features is not None else grid_density
 
