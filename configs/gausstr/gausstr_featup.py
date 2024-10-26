@@ -3,7 +3,7 @@ _base_ = 'mmdet3d::_base_/default_runtime.py'
 custom_imports = dict(imports=['gausstr'])
 
 input_size = (432, 768)
-embed_dims = 512
+embed_dims = 256
 
 model = dict(
     type='GaussTR',
@@ -14,7 +14,7 @@ model = dict(
         std=[58.395, 57.12, 57.375]),
     neck=dict(
         type='ViTDetFPN',
-        in_channels=768,
+        in_channels=512,
         out_channels=embed_dims,
         norm_cfg=dict(type='LN2d')),
     decoder=dict(
@@ -71,6 +71,7 @@ train_pipeline = [
         resize_lim=[0.48, 0.48],
         is_train=True),
     dict(type='LoadDepthPreds', depth_root='data/nuscenes_depth_metric3d'),
+    dict(type='LoadPrecompFeats', root_dir='data/nuscenes_featup'),
     dict(
         type='Pack3DDetInputs',
         keys=['img'],
@@ -88,6 +89,7 @@ test_pipeline = [
     dict(type='LoadOccGTFromFile'),
     dict(type='ImageAug3D', final_dim=input_size, resize_lim=[0.48, 0.48]),
     dict(type='LoadDepthPreds', depth_root='data/nuscenes_depth_metric3d'),
+    dict(type='LoadPrecompFeats', root_dir='data/nuscenes_featup'),
     dict(
         type='Pack3DDetInputs',
         keys=['img', 'gt_semantic_seg'],
@@ -113,7 +115,6 @@ train_dataloader = dict(
     dataset=dict(
         ann_file='nuscenes_infos_train.pkl',
         pipeline=train_pipeline,
-        # load_adj_frame=True,
         **shared_dataset_cfg))
 val_dataloader = dict(
     batch_size=2,
@@ -125,7 +126,6 @@ val_dataloader = dict(
     dataset=dict(
         ann_file='nuscenes_infos_val.pkl',
         pipeline=test_pipeline,
-        # load_adj_frame=True,
         **shared_dataset_cfg))
 test_dataloader = val_dataloader
 
@@ -148,5 +148,5 @@ test_cfg = dict(type='TestLoop')
 
 param_scheduler = [
     dict(type='LinearLR', start_factor=1e-3, begin=0, end=200, by_epoch=False),
-    dict(type='ConstantLR', factor=1)  # TODO: MultiStepLR
+    dict(type='MultiStepLR', milestones=[16], gamma=0.1)
 ]

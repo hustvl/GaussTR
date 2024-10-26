@@ -208,7 +208,7 @@ class GaussTRCLIPHead(BaseModule):
             image_size=(900, 1600),
             near_plane=0.1,
             far_plane=100,
-            render_mode='RGB+D',
+            render_mode='RGB+D',  # NOTE: 'ED' mode is better for visualization
             channel_chunk=32)
         rendered_imgs = rendered[:, :, :-1]
         rendered_depth = rendered[:, :, -1:]
