@@ -1,4 +1,5 @@
-import time
+import os
+import os.path as osp
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -212,7 +213,6 @@ class GaussTRCLIPHead(BaseModule):
             channel_chunk=32)
         rendered_imgs = rendered[:, :, :-1]
         rendered_depth = rendered[:, :, -1:]
-        # self.visualize_rendered_results((rendered_depth, depth.unsqueeze(2)))
 
         rendered_imgs = rendered_imgs.flatten(0, 1)
         rendered_imgs = F.avg_pool2d(rendered_imgs, 16)
@@ -264,8 +264,14 @@ class GaussTRCLIPHead(BaseModule):
         return dict(
             cam2imgs=cam2img, cam2egos=cam2keyego, img_aug_mats=img_aug_mat)
 
-    def visualize_rendered_results(self, results):
+    def visualize_rendered_results(self,
+                                   results,
+                                   arrangement='vertical',
+                                   save_dir='vis'):
         # (bs, t*n, 3/1, h, w)
+        assert arrangement in ('vertical', 'tiled')
+        if not isinstance(results, (list, tuple)):
+            results = [results]
         vis = []
         for res in results:
             res = res[0]
@@ -275,8 +281,17 @@ class GaussTRCLIPHead(BaseModule):
                 res = res.unsqueeze(0).expand(3, *([-1] * 4)).flatten(0, 1)
                 res = F.interpolate(res, scale_factor=self.downsample)
 
-            img = res.permute(0, 2, 3, 1).flatten(
-                0, 1).detach().cpu().numpy()  # (t * n * h, w, 3/1)
+            img = res.permute(0, 2, 3, 1)  # (t * n, h, w, 3/1)
+            if arrangement == 'vertical':
+                img = img.flatten(0, 1)
+            else:
+                img = torch.cat((
+                    torch.cat((img[2], img[4]), dim=0),
+                    torch.cat((img[0], img[3]), dim=0),
+                    torch.cat((img[1], img[5]), dim=0),
+                ),
+                                dim=1)
+            img = img.detach().cpu().numpy()
             if img.shape[-1] == 1:
                 from matplotlib import colormaps as cm
                 cmap = cm.get_cmap('Spectral_r')
@@ -284,6 +299,12 @@ class GaussTRCLIPHead(BaseModule):
             img -= img.min()
             img /= img.max()
             vis.append(img)
-
         vis = np.concatenate(vis, axis=-2)
-        plt.imsave(f'{time.time() % 1e6:.2f}.png', vis)
+
+        if not hasattr(self, 'save_cnt'):
+            self.save_cnt = 0
+        else:
+            self.save_cnt += 1
+        if not osp.exists(save_dir):
+            os.makedirs(save_dir)
+        plt.imsave(osp.join(save_dir, f'{self.save_cnt}.png'), vis)

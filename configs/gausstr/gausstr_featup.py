@@ -7,7 +7,7 @@ embed_dims = 256
 
 model = dict(
     type='GaussTR',
-    num_queries=150,
+    num_queries=300,
     data_preprocessor=dict(
         type='Det3DDataPreprocessor',
         mean=[123.675, 116.28, 103.53],
@@ -39,7 +39,7 @@ model = dict(
             mode='sigmoid',
             range=(1, 16)),
         regress_head=dict(type='MLP', input_dim=embed_dims, output_dim=3),
-        text_protos='ckpts/text_proto_embeds_c21_w_prompt.pth',
+        text_protos='ckpts/text_proto_embeds.pth',
         reduce_dims=128,
         image_shape=input_size,
         voxelizer=dict(
