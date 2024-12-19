@@ -61,6 +61,7 @@ class GaussTR(BaseModel):
         img_aug_mat = []
         depth = []
         feats = []
+        sem_seg = []
 
         for i in range(len(data_samples)):
             data_samples[i].set_metainfo(
@@ -77,6 +78,8 @@ class GaussTR(BaseModel):
             depth.append(data_samples[i].depth)
             if hasattr(data_samples[i], 'feats'):
                 feats.append(data_samples[i].feats)
+            if hasattr(data_samples[i], 'sem_seg'):
+                sem_seg.append(data_samples[i].sem_seg)
 
         data_samples = dict(
             depth=depth,
@@ -87,6 +90,8 @@ class GaussTR(BaseModel):
             img_aug_mat=img_aug_mat if img_aug_mat else None)
         if feats:
             data_samples['feats'] = feats
+        if sem_seg:
+            data_samples['sem_seg'] = sem_seg
         for k, v in data_samples.items():
             if isinstance(v, torch.Tensor) or not isinstance(v, Iterable):
                 continue
@@ -111,12 +116,11 @@ class GaussTR(BaseModel):
             else:
                 x = self.backbone(inputs)[0]
         else:
-            x = data_samples.pop('feats').flatten(0, 1)
+            x = data_samples['feats'].flatten(0, 1)
 
         if hasattr(self, 'projection'):
             x = self.projection(x.permute(0, 2, 3, 1))[0]
             x = x.permute(0, 3, 1, 2)
-        data_samples['tgt_imgs'] = x
         if n > data_samples['num_views']:
             x = x.reshape(bs, n, *x.shape[1:])
             x = x[:, :data_samples['num_views']].flatten(0, 1)

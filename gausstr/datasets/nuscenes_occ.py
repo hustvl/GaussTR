@@ -93,8 +93,9 @@ class NuScenesOccDataset(NuScenesDataset):
             assert (len(input_seq) == 3 and input_seq[0]['scene_token'] ==
                     input_seq[1]['scene_token'] == input_seq[2]['scene_token'])
             input_dict = self.concat_adj_frames(*input_seq)
-        input_dict['occ_gt_path'] = os.path.join(self.data_root,
-                                                 input_dict['occ_path'])
+        input_dict['occ_path'] = os.path.join(
+            self.data_root,
+            f"gts/{input_dict['scene_idx']}/{input_dict['token']}")
         return input_dict
 
     def concat_adj_frames(self, prev, curr, next=None):

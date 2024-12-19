@@ -3,30 +3,20 @@ _base_ = 'mmdet3d::_base_/default_runtime.py'
 custom_imports = dict(imports=['gausstr'])
 
 input_size = (432, 768)
-embed_dims = 512
+embed_dims = 256
+feat_dims = 512
+reduce_dims = 128
 
 model = dict(
     type='GaussTR',
-    num_queries=150,
+    num_queries=300,
     data_preprocessor=dict(
         type='Det3DDataPreprocessor',
         mean=[123.675, 116.28, 103.53],
         std=[58.395, 57.12, 57.375]),
-    backbone=dict(
-        type='VisionTransformer',
-        _scope_='mmpretrain',
-        arch='b',
-        out_indices=-2,
-        out_type='featmap',
-        pre_norm=True,
-        frozen_stages=12,
-        init_cfg=dict(
-            type='Pretrained',
-            checkpoint='ckpts/clip-vit-b-p16.pth',
-            prefix='visual')),
     neck=dict(
         type='ViTDetFPN',
-        in_channels=768,
+        in_channels=feat_dims,
         out_channels=embed_dims,
         norm_cfg=dict(type='LN2d')),
     decoder=dict(
@@ -39,12 +29,12 @@ model = dict(
             cross_attn_cfg=dict(embed_dims=embed_dims, num_levels=4),
             ffn_cfg=dict(embed_dims=embed_dims, feedforward_channels=2048)),
         post_norm_cfg=None),
-    custom_attn_type='maskclip',
     gauss_head=dict(
-        type='GaussTRCLIPHead',
+        type='GaussTRHead',
         opacity_head=dict(
             type='MLP', input_dim=embed_dims, output_dim=1, mode='sigmoid'),
-        feature_head=dict(type='MLP', input_dim=embed_dims, output_dim=512),
+        feature_head=dict(
+            type='MLP', input_dim=embed_dims, output_dim=feat_dims),
         scale_head=dict(
             type='MLP',
             input_dim=embed_dims,
@@ -52,17 +42,9 @@ model = dict(
             mode='sigmoid',
             range=(1, 16)),
         regress_head=dict(type='MLP', input_dim=embed_dims, output_dim=3),
-        projection=dict(
-            type='CLIPProjection',
-            _scope_='mmpretrain',
-            in_channels=768,
-            out_channels=512,
-            init_cfg=dict(
-                type='Pretrained',
-                checkpoint='ckpts/clip-vit-b-p16.pth',
-                prefix='visual_proj')),
-        text_protos='ckpts/text_proto_embeds_c21_w_prompt.pth',
-        reduce_dims=128,
+        text_protos='ckpts/text_proto_embeds.pth',
+        reduce_dims=reduce_dims,
+        segment_head=dict(type='MLP', input_dim=reduce_dims, output_dim=26),
         image_shape=input_size,
         voxelizer=dict(
             type='GaussianVoxelizer',
@@ -92,13 +74,22 @@ train_pipeline = [
         final_dim=input_size,
         resize_lim=[0.48, 0.48],
         is_train=True),
-    dict(type='LoadDepthPreds', depth_root='data/nuscenes_depth_metric3d'),
+    dict(
+        type='LoadFeatMaps',
+        data_root='data/nuscenes_metric3d',
+        key='depth',
+        apply_aug=True),
+    dict(type='LoadFeatMaps', data_root='data/nuscenes_featup', key='feats'),
+    dict(
+        type='LoadFeatMaps',
+        data_root='data/nuscenes_grounded_sam2',
+        key='sem_seg'),
     dict(
         type='Pack3DDetInputs',
         keys=['img'],
         meta_keys=[
             'cam2img', 'cam2ego', 'ego2global', 'img_aug_mat', 'sample_idx',
-            'num_views', 'img_path', 'depth'
+            'num_views', 'img_path', 'depth', 'feats', 'sem_seg'
         ])
 ]
 test_pipeline = [
@@ -107,15 +98,20 @@ test_pipeline = [
         to_float32=True,
         color_type='color',
         num_views=6),
-    dict(type='LoadOccGTFromFile'),
+    dict(type='LoadOccFromFile'),
     dict(type='ImageAug3D', final_dim=input_size, resize_lim=[0.48, 0.48]),
-    dict(type='LoadDepthPreds', depth_root='data/nuscenes_depth_metric3d'),
+    dict(
+        type='LoadFeatMaps',
+        data_root='data/nuscenes_metric3d',
+        key='depth',
+        apply_aug=True),
+    dict(type='LoadFeatMaps', data_root='data/nuscenes_featup', key='feats'),
     dict(
         type='Pack3DDetInputs',
         keys=['img', 'gt_semantic_seg'],
         meta_keys=[
             'cam2img', 'cam2ego', 'ego2global', 'img_aug_mat', 'sample_idx',
-            'num_views', 'img_path', 'depth', 'mask_camera'
+            'num_views', 'img_path', 'depth', 'feats', 'mask_camera'
         ])
 ]
 
@@ -135,7 +131,6 @@ train_dataloader = dict(
     dataset=dict(
         ann_file='nuscenes_infos_train.pkl',
         pipeline=train_pipeline,
-        # load_adj_frame=True,
         **shared_dataset_cfg))
 val_dataloader = dict(
     batch_size=2,
@@ -147,7 +142,6 @@ val_dataloader = dict(
     dataset=dict(
         ann_file='nuscenes_infos_val.pkl',
         pipeline=test_pipeline,
-        # load_adj_frame=True,
         **shared_dataset_cfg))
 test_dataloader = val_dataloader
 
@@ -170,5 +164,5 @@ test_cfg = dict(type='TestLoop')
 
 param_scheduler = [
     dict(type='LinearLR', start_factor=1e-3, begin=0, end=200, by_epoch=False),
-    dict(type='ConstantLR', factor=1)  # TODO: MultiStepLR
+    dict(type='MultiStepLR', milestones=[16], gamma=0.1)
 ]

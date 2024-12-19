@@ -3,5 +3,8 @@ torchvision
 mmcv
 mmdet
 mmdet3d
+mmpretrain
+mmsegmentation
 openmim
 ninja
+gsplat

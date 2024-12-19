@@ -96,7 +96,7 @@ def merge_probs(probs, categories):
 
 
 @MODELS.register_module()
-class GaussTRCLIPHead(BaseModule):
+class GaussTRHead(BaseModule):
 
     def __init__(self,
                  opacity_head,
@@ -106,6 +106,7 @@ class GaussTRCLIPHead(BaseModule):
                  reduce_dims,
                  image_shape,
                  voxelizer,
+                 segment_head=None,
                  depth_limit=51.2,
                  projection=None,
                  text_protos=None,
@@ -115,6 +116,9 @@ class GaussTRCLIPHead(BaseModule):
         self.feature_head = MODELS.build(feature_head)
         self.scale_head = MODELS.build(scale_head)
         self.regress_head = MODELS.build(regress_head)
+        self.segment_head = MODELS.build(
+            segment_head) if segment_head else None
+
         self.reduce_dims = reduce_dims
         self.image_shape = image_shape
         self.depth_limit = depth_limit
@@ -139,9 +143,10 @@ class GaussTRCLIPHead(BaseModule):
                 cam2ego,
                 mode='tensor',
                 num_views=6,
-                tgt_imgs=None,
+                feats=None,
                 img_aug_mat=None,
-                ego2global=None):
+                sem_segs=None,
+                **kwargs):
         bs, n = cam2img.shape[:2]
         x = x.reshape(bs, n, *x.shape[1:])
 
@@ -183,11 +188,11 @@ class GaussTRCLIPHead(BaseModule):
 
             probs = merge_probs(probs, OCC3D_CATEGORIES)
             preds = probs.argmax(-1)
-            preds += (preds > 10) * 1 + 1
+            preds += (preds > 10) * 1 + 1  # skip two classes of "others"
             preds = torch.where(density.squeeze(-1) > 4e-2, preds, 17)
             return preds
 
-        tgt_feats = tgt_imgs.flatten(2).mT
+        tgt_feats = feats.flatten(2).mT
         if hasattr(self, 'projection'):
             tgt_feats = self.projection(tgt_feats)[0]
 
@@ -210,27 +215,31 @@ class GaussTRCLIPHead(BaseModule):
             near_plane=0.1,
             far_plane=100,
             render_mode='RGB+D',  # NOTE: 'ED' mode is better for visualization
-            channel_chunk=32)
-        rendered_imgs = rendered[:, :, :-1]
+            channel_chunk=32).flatten(0, 1)
         rendered_depth = rendered[:, :, -1:]
-
-        rendered_imgs = rendered_imgs.flatten(0, 1)
-        rendered_imgs = F.avg_pool2d(rendered_imgs, 16)
-        rendered_imgs = rendered_imgs.flatten(2).mT
+        rendered = rendered[:, :, :-1]
 
         depth = torch.where(depth < self.depth_limit, depth, 1e-3)
+        tgt_feats = tgt_feats.mT.reshape(bs * n, self.reduce_dims,
+                                         *feats.shape[2:])
+        tgt_feats = F.interpolate(tgt_feats, scale_factor=16, mode='bilinear')
+
         losses = {}
         losses['loss_depth'] = self.depth_loss(
-            rendered_depth.flatten(0, 2), depth.flatten(0, 1))
+            rendered_depth.flatten(0, 1), depth.flatten(0, 1))
         losses['mae_depth'] = self.depth_loss(
-            rendered_depth[:, :num_views].flatten(0, 2),
+            rendered_depth[:, :num_views].flatten(0, 1),
             depth[:, :num_views].flatten(0, 1),
             criterion='l1')
 
         losses['loss_cosine'] = F.cosine_embedding_loss(
-            rendered_imgs.flatten(0, 1), tgt_feats.flatten(0, 1),
-            torch.ones_like(tgt_feats.flatten(0, 1)[:, 0])) * 2
-        losses['loss_mse'] = F.mse_loss(rendered_imgs, tgt_feats) * 2
+            rendered.flatten(0, 1), tgt_feats.flatten(0, 1),
+            torch.ones_like(tgt_feats.flatten(0, 1)[:, 0])) * 5
+        if self.segment_head:
+            losses['loss_ce'] = F.cross_entropy(
+                self.segment_head(rendered.flatten(2).mT).mT,
+                sem_segs.flatten(1).long(),
+                ignore_index=0)
         return losses
 
     def photometric_error(self, src_imgs, rec_imgs):

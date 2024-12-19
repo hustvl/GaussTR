@@ -163,3 +163,23 @@ def unbatched_forward(func):
             return torch.stack(outputs)
 
     return wrapper
+
+
+OCC3D_CATEGORIES = (
+    ['barrier'],
+    ['bicycle'],
+    ['bus'],
+    ['car'],
+    ['construction vehicle'],
+    ['motorcycle'],
+    ['person'],
+    ['cone'],
+    ['trailer'],
+    ['truck'],
+    ['road'],
+    ['sidewalk'],
+    ['terrain', 'grass'],
+    ['building', 'wall', 'fence', 'pole', 'sign'],
+    ['vegetation'],
+    ['sky'],
+)

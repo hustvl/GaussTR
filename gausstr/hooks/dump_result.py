@@ -6,7 +6,7 @@ from mmdet3d.registry import HOOKS
 
 
 @HOOKS.register_module()
-class DumpVisualizationHook(Hook):
+class DumpResultHook(Hook):
 
     def __init__(self, interval=1):
         self.interval = interval

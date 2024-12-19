@@ -1,1 +1,1 @@
-from .dump_visualization import DumpVisualizationHook
+from .dump_result import DumpResultHook

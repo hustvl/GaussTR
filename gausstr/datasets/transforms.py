@@ -180,11 +180,11 @@ class PointToMultiViewDepth(BaseTransform):
 
 
 @TRANSFORMS.register_module()
-class LoadOccGTFromFile(BaseTransform):
+class LoadOccFromFile(BaseTransform):
 
     def transform(self, results):
-        occ_gt_path = os.path.join(results['occ_gt_path'], 'labels.npz')
-        occ_labels = np.load(occ_gt_path)
+        occ_path = os.path.join(results['occ_path'], 'labels.npz')
+        occ_labels = np.load(occ_path)
 
         results['gt_semantic_seg'] = occ_labels['semantics']
         results['mask_lidar'] = occ_labels['mask_lidar']
@@ -349,53 +349,34 @@ class BEVDataAug(BaseTransform):
 
 
 @TRANSFORMS.register_module()
-class LoadDepthPreds(BaseTransform):
+class LoadFeatMaps(BaseTransform):
 
-    def __init__(self, depth_root):
-        self.depth_root = depth_root
+    def __init__(self, data_root, key, apply_aug=False):
+        self.data_root = data_root
+        self.key = key
+        self.apply_aug = apply_aug
 
     def transform(self, results):
+        feats = []
         img_aug_mats = results.get('img_aug_mat')
-        depths = []
         for i, filename in enumerate(results['filename']):
-            depth = np.load(
-                os.path.join(self.depth_root,
+            feat = np.load(
+                os.path.join(self.data_root,
                              filename.split('/')[-1].split('.')[0] + '.npy'))
-            depth = torch.from_numpy(depth)
+            feat = torch.from_numpy(feat)
 
             if img_aug_mats is not None:
                 post_rot = img_aug_mats[i][:3, :3]
                 post_tran = img_aug_mats[i][:3, 3]
                 assert post_rot[0, 1] == post_rot[1, 0] == 0  # noqa
 
-                h, w = depth.shape
-                depth = F.interpolate(
-                    depth[None, None],
-                    (int(h * post_rot[1, 1] + 0.5),
-                     int(w * post_rot[0, 0] +
-                         0.5)),  # noqa: precision issue due to float32
+                h, w = feat.shape
+                feat = F.interpolate(
+                    feat[None, None], (int(h * post_rot[1, 1] + 0.5),
+                                       int(w * post_rot[0, 0] + 0.5)),
                     mode='bilinear').squeeze()
-                depth = depth[int(-post_tran[1]):, int(-post_tran[0]):]
-            depths.append(depth)
-
-        results['depth'] = torch.stack(depths)
-        return results
-
-
-@TRANSFORMS.register_module()
-class LoadPrecompFeats(BaseTransform):
-
-    def __init__(self, root_dir):
-        self.root_dir = root_dir
-
-    def transform(self, results):
-        feats = []
-        for i, filename in enumerate(results['filename']):
-            feat = np.load(
-                os.path.join(self.root_dir,
-                             filename.split('/')[-1].split('.')[0] + '.npy'))
-            feat = torch.from_numpy(feat)
+                feat = feat[int(-post_tran[1]):, int(-post_tran[0]):]
             feats.append(feat)
 
-        results['feats'] = torch.stack(feats)
+        results[self.key] = torch.stack(feats)
         return results
