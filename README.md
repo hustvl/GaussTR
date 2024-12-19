@@ -1,4 +1,4 @@
-# [GaussTR](): Foundation Model-Aligned [Gauss]()ian [Tr]()ansformer <br> for Self-Supervised 3D Spatial Understanding
+# [GaussTR](): Foundation Model-Aligned [Gauss]()ian [Tr]()ansformer for Self-Supervised 3D Spatial Understanding
 
 [![arXiv](https://img.shields.io/badge/arXiv-2412.13193-red?logo=arXiv&logoColor=red)](https://arxiv.org/abs/2412.13193)
 [![License: MIT](https://img.shields.io/github/license/hustvl/GaussTR)](LICENSE)
