@@ -61,7 +61,6 @@ If you find our paper and code helpful for your research, please consider starri
     year = 2024,
     journal = {arXiv preprint arXiv:2412.13193}
 }
-}
 ```
 
 ## Acknowledgements
