@@ -365,7 +365,7 @@ class LoadFeatMaps(BaseTransform):
                              filename.split('/')[-1].split('.')[0] + '.npy'))
             feat = torch.from_numpy(feat)
 
-            if img_aug_mats is not None:
+            if self.apply_aug and img_aug_mats is not None:
                 post_rot = img_aug_mats[i][:3, :3]
                 post_tran = img_aug_mats[i][:3, 3]
                 assert post_rot[0, 1] == post_rot[1, 0] == 0  # noqa
