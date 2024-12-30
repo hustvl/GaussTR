@@ -8,43 +8,42 @@
 ### Installation
 
 ```
-pip install -r requirements
+pip install -r requirements.txt
 ```
 
 ### Dataset Preparation
 
-Follow the [mmdetection3d](https://mmdetection3d.readthedocs.io/en/latest/user_guides/dataset_prepare.html#nuscenes) instructions for preparing the nuScenes dataset.
-Then update it with `scene_idx` to match the occupancy ground truths.
+1. Prepare the nuScenes dataset following the instructions from [mmdetection3d](https://mmdetection3d.readthedocs.io/en/latest/user_guides/dataset_prepare.html#nuscenes).
+2. Update the dataset with `scene_idx` to match with the occupancy ground truths by running:
 
-```
-python tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes --extra-tag nuscenes
-```
+    ```
+    python tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes --extra-tag nuscenes
+    ```
 
-Download `gts` from [CVPR2023-3D-Occupancy-Prediction](https://github.com/CVPR2023-3D-Occupancy-Prediction/CVPR2023-3D-Occupancy-Prediction) and place them under `data/nuscenes/gts`.
-
-Generate features and rendering targets using [Metric 3D V2](https://github.com/YvanYin/Metric3D), [FeatUp](https://github.com/mhamilton723/FeatUp) for MaskCLIP, and [Grounded SAM 2](https://github.com/IDEA-Research/Grounded-SAM-2).
+3. Download occupancy ground truth data from [CVPR2023-3D-Occupancy-Prediction](https://github.com/CVPR2023-3D-Occupancy-Prediction/CVPR2023-3D-Occupancy-Prediction) and place them under `data/nuscenes/gts`.
+4. Generate features and rendering targets using [Metric 3D V2](https://github.com/YvanYin/Metric3D), [FeatUp](https://github.com/mhamilton723/FeatUp) for MaskCLIP, and [Grounded SAM 2](https://github.com/IDEA-Research/Grounded-SAM-2).
 
 ### CLIP Text Embeddings
 
-Generate CLIP text embeddings for the categories of interest by referring to https://github.com/open-mmlab/mmpretrain/pull/1737.
+Directly download from the releases, or manually generate CLIP text embeddings for custom categories by referring to https://github.com/open-mmlab/mmpretrain/pull/1737.
 
 ## Usage
 
 ### Training
 
 ```
-PYTHONPATH=. mim train mmdet3d configs/gausstr/gausstr.py -l pytorch -G [GPU_NUM]
+PYTHONPATH=. mim train mmdet3d configs/gausstr/gausstr.py [-l pytorch -G [GPU_NUM]]
 ```
 
 ### Testing
 
 ```
-PYTHONPATH=. mim test mmdet3d configs/gausstr/gausstr.py -C [CKPT_PATH]
+PYTHONPATH=. mim test mmdet3d configs/gausstr/gausstr.py -C [CKPT_PATH] [-l pytorch -G [GPU_NUM]]
 ```
 
 ### Visualization
 
-After testing with `DumpResultHook`, visualize the results using:
+After testing with `DumpResultHook`, visualize the results by executing:
 
 ```
 python tools/visualize.py [PKL_PATH] [--save]
