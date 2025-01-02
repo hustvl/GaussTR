@@ -182,4 +182,4 @@ OCC3D_CATEGORIES = (
     ['building', 'wall', 'fence', 'pole', 'sign'],
     ['vegetation'],
     ['sky'],
-)
+)  # `sum(OCC3D_CATEGORIES, [])` if you need to flatten the list.

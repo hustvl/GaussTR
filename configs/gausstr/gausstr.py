@@ -103,8 +103,7 @@ test_pipeline = [
     dict(
         type='LoadFeatMaps',
         data_root='data/nuscenes_metric3d',
-        key='depth',
-        apply_aug=True),
+        key='depth'),  # apply_aug=True
     dict(type='LoadFeatMaps', data_root='data/nuscenes_featup', key='feats'),
     dict(
         type='Pack3DDetInputs',
