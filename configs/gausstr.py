@@ -74,11 +74,7 @@ train_pipeline = [
         final_dim=input_size,
         resize_lim=[0.48, 0.48],
         is_train=True),
-    dict(
-        type='LoadFeatMaps',
-        data_root='data/nuscenes_metric3d',
-        key='depth',
-        apply_aug=True),
+    dict(type='LoadFeatMaps', data_root='data/nuscenes_metric3d', key='depth'),
     dict(type='LoadFeatMaps', data_root='data/nuscenes_featup', key='feats'),
     dict(
         type='LoadFeatMaps',
@@ -100,10 +96,7 @@ test_pipeline = [
         num_views=6),
     dict(type='LoadOccFromFile'),
     dict(type='ImageAug3D', final_dim=input_size, resize_lim=[0.48, 0.48]),
-    dict(
-        type='LoadFeatMaps',
-        data_root='data/nuscenes_metric3d',
-        key='depth'),  # apply_aug=True
+    dict(type='LoadFeatMaps', data_root='data/nuscenes_metric3d', key='depth'),
     dict(type='LoadFeatMaps', data_root='data/nuscenes_featup', key='feats'),
     dict(
         type='Pack3DDetInputs',
@@ -132,7 +125,7 @@ train_dataloader = dict(
         pipeline=train_pipeline,
         **shared_dataset_cfg))
 val_dataloader = dict(
-    batch_size=2,
+    batch_size=4,
     num_workers=4,
     persistent_workers=True,
     pin_memory=True,

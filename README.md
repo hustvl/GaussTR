@@ -26,42 +26,49 @@ pip install -r requirements.txt
 
 ### Dataset Preparation
 
-1. Prepare the nuScenes dataset following the instructions provided in [mmdetection3d](https://mmdetection3d.readthedocs.io/en/latest/user_guides/dataset_prepare.html#nuscenes).
-2. Update the dataset pkl with `scene_idx` to match with occupancy ground truths by running:
+1. Prepare the nuScenes dataset following the instructions provided in the [mmdetection3d docs](https://mmdetection3d.readthedocs.io/en/latest/user_guides/dataset_prepare.html#nuscenes).
+2. Update the dataset `.pkl` files with `scene_idx` to match with occupancy ground truths by running:
 
     ```bash
     python tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes --extra-tag nuscenes
     ```
 
-3. Download occupancy ground truth data from [CVPR2023-3D-Occupancy-Prediction](https://github.com/CVPR2023-3D-Occupancy-Prediction/CVPR2023-3D-Occupancy-Prediction) and place them under `data/nuscenes/gts`.
-4. Generate features and rendering targets.
+3. Download the occupancy ground truth data from [CVPR2023-3D-Occupancy-Prediction](https://github.com/CVPR2023-3D-Occupancy-Prediction/CVPR2023-3D-Occupancy-Prediction) and place it under `data/nuscenes/gts`.
+4. Generate the required features and rendering targets:
 
-    * Use `gausstr/models/metric3d.py` to generate metric depth estimation.
-    * Run `tools/generate_featup.py` with [FeatUp](https://github.com/mhamilton723/FeatUp).
-    * Run `tools/generate_grounded_sam2.py` with [Grounded SAM 2](https://github.com/IDEA-Research/Grounded-SAM-2).
-      Note that this step is **optional** for enabling training augmentation.
+    * Run `PYTHONPATH=. python tools/generate_depth.py` to generate metric depth estimations.
+    * Navigate to the [FeatUp](https://github.com/mhamilton723/FeatUp) repository and run `python tools/generate_featup.py` there.
+    * Optionally, navigate to the [Grounded SAM 2](https://github.com/IDEA-Research/Grounded-SAM-2) and run `python tools/generate_grounded_sam2.py` to enable training augmentation.
 
 ### CLIP Text Embeddings
 
-Download pre-generated CLIP text embeddings from the releases section, or manually generate custom embeddings by referring to https://github.com/open-mmlab/mmpretrain/pull/1737.
+Download pre-generated CLIP text embeddings from the [releases section](https://github.com/hustvl/GaussTR/releases/), or manually generate custom embeddings by referring to https://github.com/open-mmlab/mmpretrain/pull/1737.
 
 ## Usage
 
 ### Training
 
 ```bash
-PYTHONPATH=. mim train mmdet3d configs/gausstr/gausstr.py [-l pytorch -G [GPU_NUM]]
+PYTHONPATH=. mim train mmdet3d configs/gausstr.py [-l pytorch -G [GPU_NUM]]
 ```
 
 ### Testing
 
 ```bash
-PYTHONPATH=. mim test mmdet3d configs/gausstr/gausstr.py -C [CKPT_PATH] [-l pytorch -G [GPU_NUM]]
+PYTHONPATH=. mim test mmdet3d configs/gausstr.py -C [CKPT_PATH] [-l pytorch -G [GPU_NUM]]
 ```
 
 ### Visualization
 
-Visualize results after testing with `DumpResultHook` by running:
+To enable visualization during testing, include the following in the config:
+
+```python
+custom_hooks = [
+    dict(type='DumpVisualizationHook'),
+]
+```
+
+After testing, visualize the saved `.pkl` files by executing:
 
 ```bash
 python tools/visualize.py [PKL_PATH] [--save]
