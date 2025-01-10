@@ -142,7 +142,6 @@ class GaussTRHead(BaseModule):
                 cam2img,
                 cam2ego,
                 mode='tensor',
-                num_views=6,
                 feats=None,
                 img_aug_mat=None,
                 sem_segs=None,
@@ -192,12 +191,12 @@ class GaussTRHead(BaseModule):
             preds = torch.where(density.squeeze(-1) > 4e-2, preds, 17)
             return preds
 
-        tgt_feats = feats.flatten(2).mT
+        tgt_feats = feats.flatten(-2).mT
         if hasattr(self, 'projection'):
             tgt_feats = self.projection(tgt_feats)[0]
 
         u, s, v = torch.pca_lowrank(
-            tgt_feats.flatten(0, 1).double(), q=self.reduce_dims, niter=4)
+            tgt_feats.double(), q=self.reduce_dims, niter=4)
         tgt_feats = tgt_feats @ v.to(tgt_feats)
         features = features @ v.to(features)
         features = features.float()
@@ -216,29 +215,29 @@ class GaussTRHead(BaseModule):
             far_plane=100,
             render_mode='RGB+D',  # NOTE: 'ED' mode is better for visualization
             channel_chunk=32).flatten(0, 1)
-        rendered_depth = rendered[:, :, -1:]
-        rendered = rendered[:, :, :-1]
-
-        depth = torch.where(depth < self.depth_limit, depth, 1e-3)
-        tgt_feats = tgt_feats.mT.reshape(bs * n, self.reduce_dims,
-                                         *feats.shape[2:])
-        tgt_feats = F.interpolate(tgt_feats, scale_factor=16, mode='bilinear')
+        rendered_depth = rendered[:, -1]
+        rendered = rendered[:, :-1]
 
         losses = {}
-        losses['loss_depth'] = self.depth_loss(
-            rendered_depth.flatten(0, 1), depth.flatten(0, 1))
+        depth = torch.where(depth < self.depth_limit, depth,
+                            1e-3).flatten(0, 1)
+        losses['loss_depth'] = self.depth_loss(rendered_depth, depth)
         losses['mae_depth'] = self.depth_loss(
-            rendered_depth[:, :num_views].flatten(0, 1),
-            depth[:, :num_views].flatten(0, 1),
-            criterion='l1')
+            rendered_depth, depth, criterion='l1')
 
+        rendered = rendered.flatten(2).mT
+        tgt_feats = tgt_feats.mT.reshape(bs * n, self.reduce_dims,
+                                         *feats.shape[-2:])
+        tgt_feats = F.interpolate(tgt_feats, scale_factor=16, mode='bilinear')
+        tgt_feats = tgt_feats.flatten(2).mT
         losses['loss_cosine'] = F.cosine_embedding_loss(
             rendered.flatten(0, 1), tgt_feats.flatten(0, 1),
             torch.ones_like(tgt_feats.flatten(0, 1)[:, 0])) * 5
+
         if self.segment_head:
             losses['loss_ce'] = F.cross_entropy(
-                self.segment_head(rendered.flatten(2).mT).mT,
-                sem_segs.flatten(1).long(),
+                self.segment_head(rendered).mT,
+                sem_segs.flatten(0, 1).flatten(1).long(),
                 ignore_index=0)
         return losses
 
