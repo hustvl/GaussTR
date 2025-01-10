@@ -48,6 +48,8 @@ Download pre-generated CLIP text embeddings from the [releases section](https://
 
 ### Training
 
+**🚧 NOTE: There are some issues in the training, please hold off until we've implemented the fix.**
+
 ```bash
 PYTHONPATH=. mim train mmdet3d configs/gausstr.py [-l pytorch -G [GPU_NUM]]
 ```
