@@ -371,10 +371,11 @@ class LoadFeatMaps(BaseTransform):
                 assert post_rot[0, 1] == post_rot[1, 0] == 0  # noqa
 
                 h, w = feat.shape
+                mode = 'bilinear' if self.key != 'sem_seg' else 'nearest'  # noqa
                 feat = F.interpolate(
                     feat[None, None], (int(h * post_rot[1, 1] + 0.5),
                                        int(w * post_rot[0, 0] + 0.5)),
-                    mode='bilinear').squeeze()
+                    mode=mode).squeeze()
                 feat = feat[int(-post_tran[1]):, int(-post_tran[0]):]
             feats.append(feat)
 

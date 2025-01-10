@@ -79,7 +79,8 @@ train_pipeline = [
     dict(
         type='LoadFeatMaps',
         data_root='data/nuscenes_grounded_sam2',
-        key='sem_seg'),
+        key='sem_seg',
+        apply_aug=True),
     dict(
         type='Pack3DDetInputs',
         keys=['img'],
