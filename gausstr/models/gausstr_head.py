@@ -196,7 +196,7 @@ class GaussTRHead(BaseModule):
             tgt_feats = self.projection(tgt_feats)[0]
 
         u, s, v = torch.pca_lowrank(
-            tgt_feats.double(), q=self.reduce_dims, niter=4)
+            tgt_feats.flatten(0, 2).double(), q=self.reduce_dims, niter=4)
         tgt_feats = tgt_feats @ v.to(tgt_feats)
         features = features @ v.to(features)
         features = features.float()
@@ -225,18 +225,15 @@ class GaussTRHead(BaseModule):
         losses['mae_depth'] = self.depth_loss(
             rendered_depth, depth, criterion='l1')
 
-        rendered = rendered.flatten(2).mT
-        tgt_feats = tgt_feats.mT.reshape(bs * n, self.reduce_dims,
-                                         *feats.shape[-2:])
-        tgt_feats = F.interpolate(tgt_feats, scale_factor=16, mode='bilinear')
-        tgt_feats = tgt_feats.flatten(2).mT
+        rendered_ = F.avg_pool2d(rendered, 16).flatten(2).mT
+        tgt_feats = tgt_feats.flatten(0, 2)
         losses['loss_cosine'] = F.cosine_embedding_loss(
-            rendered.flatten(0, 1), tgt_feats.flatten(0, 1),
-            torch.ones_like(tgt_feats.flatten(0, 1)[:, 0])) * 5
+            rendered_.flatten(0, 1), tgt_feats, torch.ones_like(
+                tgt_feats[:, 0])) * 5
 
         if self.segment_head:
             losses['loss_ce'] = F.cross_entropy(
-                self.segment_head(rendered).mT,
+                self.segment_head(rendered.flatten(2).mT).mT,
                 sem_segs.flatten(0, 1).flatten(1).long(),
                 ignore_index=0)
         return losses
