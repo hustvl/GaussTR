@@ -64,7 +64,7 @@ To enable visualization during testing, include the following in the config:
 
 ```python
 custom_hooks = [
-    dict(type='DumpVisualizationHook'),
+    dict(type='DumpResultHook '),
 ]
 ```
 
