@@ -225,15 +225,20 @@ class GaussTRHead(BaseModule):
         losses['mae_depth'] = self.depth_loss(
             rendered_depth, depth, criterion='l1')
 
-        rendered_ = F.avg_pool2d(rendered, 16).flatten(2).mT
-        tgt_feats = tgt_feats.flatten(0, 2)
+        # Interpolating to high resolution for supervision can improve mIoU by 0.7
+        # compared to average pooling to low resolution.
+        bsn, c, h, w = rendered.shape
+        tgt_feats = tgt_feats.mT.reshape(bsn, c, h // 16, w // 16)
+        tgt_feats = F.interpolate(tgt_feats, scale_factor=16, mode='bilinear')
+        rendered = rendered.flatten(2).mT
+        tgt_feats = tgt_feats.flatten(2).mT.flatten(0, 1)
         losses['loss_cosine'] = F.cosine_embedding_loss(
-            rendered_.flatten(0, 1), tgt_feats, torch.ones_like(
+            rendered.flatten(0, 1), tgt_feats, torch.ones_like(
                 tgt_feats[:, 0])) * 5
 
         if self.segment_head:
             losses['loss_ce'] = F.cross_entropy(
-                self.segment_head(rendered.flatten(2).mT).mT,
+                self.segment_head(rendered).mT,
                 sem_segs.flatten(0, 1).flatten(1).long(),
                 ignore_index=0)
         return losses
