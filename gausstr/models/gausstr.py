@@ -22,16 +22,16 @@ class GaussTR(BaseModel):
                  projection=None,
                  encoder=None,
                  pos_embed=None,
-                 custom_attn_type=None,
+                 attn_type=None,
                  **kwargs):
         super().__init__(**kwargs)
         if backbone is not None:
             self.backbone = MODELS.build(backbone)
             self.frozen_backbone = all(not param.requires_grad
                                        for param in self.backbone.parameters())
-            if custom_attn_type is not None:
+            if attn_type is not None:
                 assert backbone.out_indices == -2
-            self.custom_attn_type = custom_attn_type
+            self.attn_type = attn_type
         if projection is not None:
             self.projection = MODELS.build(projection)
             if 'init_cfg' in projection and projection.init_cfg.type == 'Pretrained':
@@ -111,8 +111,8 @@ class GaussTR(BaseModel):
                     self.backbone.eval()
                 with torch.no_grad():
                     x = self.backbone(inputs)[0]
-                    if self.custom_attn_type is not None:
-                        x = self.custom_attn(x, self.custom_attn_type)
+                    if self.attn_type is not None:
+                        x = self.custom_attn(x, self.attn_type)
             else:
                 x = self.backbone(inputs)[0]
         else:
@@ -121,6 +121,8 @@ class GaussTR(BaseModel):
         if hasattr(self, 'projection'):
             x = self.projection(x.permute(0, 2, 3, 1))[0]
             x = x.permute(0, 3, 1, 2)
+        if hasattr(self, 'backbone') or hasattr(self, 'projection'):
+            data_samples['feats'] = x.reshape(bs, n, *x.shape[1:])
         if n > data_samples['num_views']:
             x = x.reshape(bs, n, *x.shape[1:])
             x = x[:, :data_samples['num_views']].flatten(0, 1)

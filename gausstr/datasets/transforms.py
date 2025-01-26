@@ -376,7 +376,7 @@ class LoadFeatMaps(BaseTransform):
                     feat[None, None], (int(h * post_rot[1, 1] + 0.5),
                                        int(w * post_rot[0, 0] + 0.5)),
                     mode=mode).squeeze()
-                feat = feat[int(-post_tran[1]):, int(-post_tran[0]):]
+                feat = feat[int(post_tran[1]):, int(-post_tran[0]):]
             feats.append(feat)
 
         results[self.key] = torch.stack(feats)
