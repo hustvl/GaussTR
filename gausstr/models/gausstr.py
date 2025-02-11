@@ -3,8 +3,7 @@ from collections.abc import Iterable
 import numpy as np
 import torch
 import torch.nn as nn
-from mmengine.model import BaseModel, ModuleList
-
+from mmengine.model import BaseModel, BaseModule, ModuleList
 from mmdet3d.registry import MODELS
 
 from .utils import flatten_multi_scale_feats
@@ -26,7 +25,14 @@ class GaussTR(BaseModel):
                  **kwargs):
         super().__init__(**kwargs)
         if backbone is not None:
-            self.backbone = MODELS.build(backbone)
+            if backbone.type == 'TorchHubModel':
+                self.backbone = torch.hub.load(backbone.repo_or_dir,
+                                               backbone.model_name)
+                self.backbone.requires_grad_(False)
+                self.backbone.is_init = True  # otherwise it will be re-inited by mmengine
+                self.patch_size = self.backbone.patch_size
+            else:
+                self.backbone = MODELS.build(backbone)
             self.frozen_backbone = all(not param.requires_grad
                                        for param in self.backbone.parameters())
             if attn_type is not None:
@@ -110,9 +116,16 @@ class GaussTR(BaseModel):
                 if self.backbone.training:
                     self.backbone.eval()
                 with torch.no_grad():
-                    x = self.backbone(inputs)[0]
-                    if self.attn_type is not None:
-                        x = self.custom_attn(x, self.attn_type)
+                    if isinstance(self.backbone, BaseModule):
+                        x = self.backbone(inputs)[0]
+                        if self.attn_type is not None:
+                            x = self.custom_attn(x, self.attn_type)
+                    else:
+                        x = self.backbone.forward_features(
+                            inputs)['x_norm_patchtokens']
+                        x = x.mT.reshape(bs * n, -1,
+                                         inputs.shape[-2] // self.patch_size,
+                                         inputs.shape[-1] // self.patch_size)
             else:
                 x = self.backbone(inputs)[0]
         else:

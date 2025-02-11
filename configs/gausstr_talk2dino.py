@@ -2,10 +2,11 @@ _base_ = 'mmdet3d::_base_/default_runtime.py'
 
 custom_imports = dict(imports=['gausstr'])
 
-input_size = (432, 768)
+input_size = (504, 896)
 embed_dims = 256
-feat_dims = 512
+feat_dims = 768
 reduce_dims = 128
+patch_size = 14
 
 model = dict(
     type='GaussTR',
@@ -14,6 +15,10 @@ model = dict(
         type='Det3DDataPreprocessor',
         mean=[123.675, 116.28, 103.53],
         std=[58.395, 57.12, 57.375]),
+    backbone=dict(
+        type='TorchHubModel',
+        repo_or_dir='facebookresearch/dinov2',
+        model_name='dinov2_vitb14_reg'),
     neck=dict(
         type='ViTDetFPN',
         in_channels=feat_dims,
@@ -42,10 +47,10 @@ model = dict(
             mode='sigmoid',
             range=(1, 16)),
         regress_head=dict(type='MLP', input_dim=embed_dims, output_dim=3),
-        text_protos='ckpts/text_proto_embeds.pth',
+        text_protos='ckpts/text_proto_embeds_talk2dino.pth',
         reduce_dims=reduce_dims,
-        segment_head=dict(type='MLP', input_dim=reduce_dims, output_dim=26),
         image_shape=input_size,
+        patch_size=patch_size,
         voxelizer=dict(
             type='GaussianVoxelizer',
             vol_range=[-40, -40, -1, 40, 40, 5.4],
@@ -72,21 +77,19 @@ train_pipeline = [
     dict(
         type='ImageAug3D',
         final_dim=input_size,
-        resize_lim=[0.48, 0.48],
+        resize_lim=[0.56, 0.56],
         is_train=True),
-    dict(type='LoadFeatMaps', data_root='data/nuscenes_metric3d', key='depth'),
-    dict(type='LoadFeatMaps', data_root='data/nuscenes_featup', key='feats'),
     dict(
         type='LoadFeatMaps',
-        data_root='data/nuscenes_grounded_sam2',
-        key='sem_seg',
+        data_root='data/nuscenes_metric3d',
+        key='depth',
         apply_aug=True),
     dict(
         type='Pack3DDetInputs',
         keys=['img'],
         meta_keys=[
             'cam2img', 'cam2ego', 'ego2global', 'img_aug_mat', 'sample_idx',
-            'num_views', 'img_path', 'depth', 'feats', 'sem_seg'
+            'num_views', 'img_path', 'depth', 'feats'
         ])
 ]
 test_pipeline = [
@@ -96,9 +99,12 @@ test_pipeline = [
         color_type='color',
         num_views=6),
     dict(type='LoadOccFromFile'),
-    dict(type='ImageAug3D', final_dim=input_size, resize_lim=[0.48, 0.48]),
-    dict(type='LoadFeatMaps', data_root='data/nuscenes_metric3d', key='depth'),
-    dict(type='LoadFeatMaps', data_root='data/nuscenes_featup', key='feats'),
+    dict(type='ImageAug3D', final_dim=input_size, resize_lim=[0.56, 0.56]),
+    dict(
+        type='LoadFeatMaps',
+        data_root='data/nuscenes_metric3d',
+        key='depth',
+        apply_aug=True),
     dict(
         type='Pack3DDetInputs',
         keys=['img', 'gt_semantic_seg'],
@@ -126,7 +132,7 @@ train_dataloader = dict(
         pipeline=train_pipeline,
         **shared_dataset_cfg))
 val_dataloader = dict(
-    batch_size=4,
+    batch_size=2,
     num_workers=4,
     persistent_workers=True,
     pin_memory=True,

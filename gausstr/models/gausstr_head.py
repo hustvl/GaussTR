@@ -105,6 +105,7 @@ class GaussTRHead(BaseModule):
                  regress_head,
                  reduce_dims,
                  image_shape,
+                 patch_size,
                  voxelizer,
                  segment_head=None,
                  depth_limit=51.2,
@@ -121,6 +122,7 @@ class GaussTRHead(BaseModule):
 
         self.reduce_dims = reduce_dims
         self.image_shape = image_shape
+        self.patch_size = patch_size
         self.depth_limit = depth_limit
         self.prompt_denoising = prompt_denoising
 
@@ -228,8 +230,10 @@ class GaussTRHead(BaseModule):
         # Interpolating to high resolution for supervision can improve mIoU by 0.7
         # compared to average pooling to low resolution.
         bsn, c, h, w = rendered.shape
-        tgt_feats = tgt_feats.mT.reshape(bsn, c, h // 16, w // 16)
-        tgt_feats = F.interpolate(tgt_feats, scale_factor=16, mode='bilinear')
+        tgt_feats = tgt_feats.mT.reshape(bsn, c, h // self.patch_size,
+                                         w // self.patch_size)
+        tgt_feats = F.interpolate(
+            tgt_feats, scale_factor=self.patch_size, mode='bilinear')
         rendered = rendered.flatten(2).mT
         tgt_feats = tgt_feats.flatten(2).mT.flatten(0, 1)
         losses['loss_cosine'] = F.cosine_embedding_loss(

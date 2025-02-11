@@ -12,11 +12,16 @@
 
 </div>
 
+## News
+
+* ***Feb 11 '25:*** Released the model integrated with Talk2DINO, achieving new state-of-the-art results.
+* ***Dec 17 '24:*** Released our arXiv paper along with the source code.
+
 ## Setup
 
 ### Installation
 
-We recommend cloning the repository with the `--single-branch` option to avoid downloading unnecessary large media files for the project website from other branches.
+We recommend cloning the repository using the `--single-branch` option to avoid downloading unnecessary large media files for the project website from other branches:
 
 ```bash
 git clone https://github.com/hustvl/GaussTR.git --single-branch
@@ -26,41 +31,50 @@ pip install -r requirements.txt
 
 ### Dataset Preparation
 
-1. Prepare the nuScenes dataset following the instructions provided in the [mmdetection3d docs](https://mmdetection3d.readthedocs.io/en/latest/user_guides/dataset_prepare.html#nuscenes).
-2. Update the dataset `.pkl` files with `scene_idx` to match with occupancy ground truths by running:
+1. Prepare the nuScenes dataset following the instructions in the [mmdetection3d docs](https://mmdetection3d.readthedocs.io/en/latest/user_guides/dataset_prepare.html#nuscenes).
+2. Update the dataset `.pkl` files with `scene_idx` to match the occupancy ground truths:
 
     ```bash
     python tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes --extra-tag nuscenes
     ```
 
-3. Download the occupancy ground truth data from [CVPR2023-3D-Occupancy-Prediction](https://github.com/CVPR2023-3D-Occupancy-Prediction/CVPR2023-3D-Occupancy-Prediction) and place it under `data/nuscenes/gts`.
-4. Generate the required features and rendering targets:
+3. Download the occupancy ground truth data from [CVPR2023-3D-Occupancy-Prediction](https://github.com/CVPR2023-3D-Occupancy-Prediction/CVPR2023-3D-Occupancy-Prediction) and place it in `data/nuscenes/gts`.
+4. Generate features and rendering targets:
 
     * Run `PYTHONPATH=. python tools/generate_depth.py` to generate metric depth estimations.
-    * Navigate to the [FeatUp](https://github.com/mhamilton723/FeatUp) repository and run `python tools/generate_featup.py` there.
-    * Optionally, navigate to the [Grounded SAM 2](https://github.com/IDEA-Research/Grounded-SAM-2) and run `python tools/generate_grounded_sam2.py` to enable training augmentation.
+    * **[For GaussTR-FeatUp Only]** Navigate to the [FeatUp](https://github.com/mhamilton723/FeatUp) repository and run `python tools/generate_featup.py`.
+    * **[Optional for GaussTR-FeatUp]** Navigate to the [Grounded SAM 2](https://github.com/IDEA-Research/Grounded-SAM-2) and run `python tools/generate_grounded_sam2.py` to enable auxiliary segmentation supervision.
 
 ### CLIP Text Embeddings
 
-Download pre-generated CLIP text embeddings from the [releases section](https://github.com/hustvl/GaussTR/releases/), or manually generate custom embeddings by referring to https://github.com/open-mmlab/mmpretrain/pull/1737.
+Download the pre-generated CLIP text embeddings from the [Releases](https://github.com/hustvl/GaussTR/releases/) page.  Alternatively, you can generate custom embeddings by referring to [mmpretrain #1737](https://github.com/open-mmlab/mmpretrain/pull/1737) or [Talk2DINO](https://github.com/lorebianchi98/Talk2DINO).
+
+**Tip:** The default prompts have not been delicately tuned. Customizing them may yield improved results.
 
 ## Usage
 
+|                               Model                               |  IoU  |  mIoU |                                                 Checkpoint                                                 |
+| ----------------------------------------------------------------- | ----- | ----- | ---------------------------------------------------------------------------------------------------------- |
+| [GaussTR-FeatUp](configs/gausstr_featup.py)                       | 45.19 | 11.70 | [checkpoint](https://github.com/hustvl/GaussTR/releases/download/v1.0/gausstr_featup_e24_miou11.70.pth)    |
+| [GaussTR-Talk2DINO<sup>*New*</sup>](configs/gausstr_talk2dino.py) | 44.73 | 12.08 | [checkpoint](https://github.com/hustvl/GaussTR/releases/download/v1.0/gausstr_talk2dino_e24_miou12.08.pth) |
+
 ### Training
 
+**Tip:** Due to the current lack of optimization for voxelization operations, evaluation during training can be time-consuming. To accelerate training, consider evaluating using the `mini_train` set or reducing the evaluation frequency.
+
 ```bash
-PYTHONPATH=. mim train mmdet3d configs/gausstr.py [-l pytorch -G [GPU_NUM]]
+PYTHONPATH=. mim train mmdet3d [CONFIG] [-l pytorch -G [GPU_NUM]]
 ```
 
 ### Testing
 
 ```bash
-PYTHONPATH=. mim test mmdet3d configs/gausstr.py -C [CKPT_PATH] [-l pytorch -G [GPU_NUM]]
+PYTHONPATH=. mim test mmdet3d [CONFIG] -C [CKPT_PATH] [-l pytorch -G [GPU_NUM]]
 ```
 
 ### Visualization
 
-To enable visualization during testing, include the following in the config:
+To enable visualization, run the testing with the following included in the config:
 
 ```python
 custom_hooks = [
@@ -68,7 +82,7 @@ custom_hooks = [
 ]
 ```
 
-After testing, visualize the saved `.pkl` files by executing:
+After testing, visualize the saved `.pkl` files with:
 
 ```bash
 python tools/visualize.py [PKL_PATH] [--save]
@@ -76,20 +90,20 @@ python tools/visualize.py [PKL_PATH] [--save]
 
 ## Citation
 
-If you find our paper and code helpful for your research, please consider starring this repository :star: and citing our work:
+If our paper and code contribute to your research, please consider starring this repository :star: and citing our work:
 
 ```BibTeX
 @article{GaussTR,
-    title = {GaussTR: Foundation Model-Aligned Gaussian Transformer for Self-Supervised 3D Spatial Understanding},
-    author = {Haoyi Jiang and Liu Liu and Tianheng Cheng and Xinjie Wang and Tianwei Lin and Zhizhong Su and Wenyu Liu and Xinggang Wang},
-    year = 2024,
+    title   = {GaussTR: Foundation Model-Aligned Gaussian Transformer for Self-Supervised 3D Spatial Understanding},
+    author  = {Haoyi Jiang and Liu Liu and Tianheng Cheng and Xinjie Wang and Tianwei Lin and Zhizhong Su and Wenyu Liu and Xinggang Wang},
+    year    = 2024,
     journal = {arXiv preprint arXiv:2412.13193}
 }
 ```
 
 ## Acknowledgements
 
-This project builds upon the pioneering work of [FeatUp](https://github.com/mhamilton723/FeatUp), [MaskCLIP](https://github.com/chongzhou96/MaskCLIP) and [gsplat](https://github.com/nerfstudio-project/gsplat).  We extend our gratitude to these projects for their contributions to the community.
+This project is built upon the pioneering work of [FeatUp](https://github.com/mhamilton723/FeatUp), [Talk2DINO](https://github.com/lorebianchi98/Talk2DINO), [MaskCLIP](https://github.com/chongzhou96/MaskCLIP) and [gsplat](https://github.com/nerfstudio-project/gsplat). We extend our gratitude to these projects for their contributions to the community.
 
 ## License
 
