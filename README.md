@@ -14,6 +14,7 @@
 
 ## News
 
+* ***Feb 27 '25:*** Our paper has been accepted at CVPR 2025. 🎉
 * ***Feb 11 '25:*** Released the model integrated with Talk2DINO, achieving new state-of-the-art results.
 * ***Dec 17 '24:*** Released our arXiv paper along with the source code.
 
