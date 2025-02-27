@@ -96,11 +96,11 @@ python tools/visualize.py [PKL_PATH] [--save]
 If our paper and code contribute to your research, please consider starring this repository :star: and citing our work:
 
 ```BibTeX
-@article{GaussTR,
-    title   = {GaussTR: Foundation Model-Aligned Gaussian Transformer for Self-Supervised 3D Spatial Understanding},
-    author  = {Haoyi Jiang and Liu Liu and Tianheng Cheng and Xinjie Wang and Tianwei Lin and Zhizhong Su and Wenyu Liu and Xinggang Wang},
-    year    = 2024,
-    journal = {arXiv preprint arXiv:2412.13193}
+@inproceedings{GaussTR,
+    title     = {GaussTR: Foundation Model-Aligned Gaussian Transformer for Self-Supervised 3D Spatial Understanding},
+    author    = {Haoyi Jiang and Liu Liu and Tianheng Cheng and Xinjie Wang and Tianwei Lin and Zhizhong Su and Wenyu Liu and Xinggang Wang},
+    year      = 2025,
+    booktitle = {CVPR}
 }
 ```
 
