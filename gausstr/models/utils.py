@@ -1,7 +1,13 @@
+from functools import reduce
+
 import numpy as np
 import torch
 from pyquaternion import Quaternion
 from torch.cuda.amp import autocast
+
+
+def cumprod(xs):
+    return reduce(lambda x, y: x * y, xs)
 
 
 def nlc_to_nchw(x, shape):
@@ -163,6 +169,36 @@ def unbatched_forward(func):
             return torch.stack(outputs)
 
     return wrapper
+
+
+def apply_to_items(func, iterable):
+    if isinstance(iterable, list):
+        return [func(i) for i in iterable]
+    elif isinstance(iterable, dict):
+        return {k: func(v) for k, v in iterable.items()}
+
+
+def flatten_bsn_forward(func, *args, **kwargs):
+    args = list(args)
+    bsn = None
+    for i, arg in enumerate(args):
+        if isinstance(arg, torch.Tensor):
+            if bsn is None:
+                bsn = arg.shape[:2]
+            args[i] = arg.flatten(0, 1)
+    for k, v in kwargs.items():
+        if isinstance(v, torch.Tensor):
+            if bsn is None:
+                bsn = v.shape[:2]
+            kwargs[k] = v.flatten(0, 1)
+    outs = func(*args, **kwargs)
+    if isinstance(outs, tuple):
+        outs = list(outs)
+        for i, out in outs:
+            outs[i] = out.reshape(bsn + out.shape[1:])
+    else:
+        outs = outs.reshape(bsn + outs.shape[1:])
+    return outs
 
 
 OCC3D_CATEGORIES = (

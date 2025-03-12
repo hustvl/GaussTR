@@ -2,8 +2,8 @@ import numpy as np
 import taichi as ti
 import torch
 
-from .utils import (generate_grid, get_covariance, quat_to_rotmat,
-                    unbatched_forward)
+from .utils import (apply_to_items, generate_grid, get_covariance,
+                    quat_to_rotmat, unbatched_forward)
 
 ti.init(arch=ti.gpu)
 
@@ -27,14 +27,21 @@ def tensor_to_field(tensor):
 @ti.data_oriented
 class TaichiVoxelizer:
 
-    def __init__(self, vol_range, voxel_size, eps=1e-6):
-
+    def __init__(self,
+                 vol_range,
+                 voxel_size,
+                 filter_gaussians=False,
+                 opacity_thresh=0,
+                 eps=1e-6):
         self.vol_range = vol_range
         self.voxel_size = voxel_size
         self.grid_shape = [
             int((vol_range[i + 3] - vol_range[i]) / voxel_size)
             for i in range(3)
         ]
+
+        self.filter_gaussians = filter_gaussians
+        self.opacity_thresh = opacity_thresh
         self.eps = eps
         self.is_inited = False
 
@@ -105,11 +112,20 @@ class TaichiVoxelizer:
 
     @unbatched_forward
     def __call__(self, **gaussians):
-        device = gaussians['means3d'].device
+        if self.filter_gaussians:
+            assert False  # slower, don't know why
+            mask = gaussians['opacities'][:, 0] > self.opacity_thresh
+            for i in range(3):
+                mask &= (gaussians['means3d'][:, i] >= self.vol_range[i]) & (
+                    gaussians['means3d'][:, i] <= self.vol_range[i + 3])
+            gaussians = apply_to_items(lambda x: x[mask], gaussians)
+
         if 'covariances' not in gaussians:
             gaussians['covariances'] = get_covariance(
                 gaussians.pop('scales'),
                 quat_to_rotmat(gaussians.pop('rotations')))
+
+        device = gaussians['means3d'].device
         gaussians = {k: tensor_to_field(v) for k, v in gaussians.items()}
 
         if not self.is_inited:

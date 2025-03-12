@@ -54,7 +54,9 @@ model = dict(
         voxelizer=dict(
             type='GaussianVoxelizer',
             vol_range=[-40, -40, -1, 40, 40, 5.4],
-            voxel_size=0.4)))
+            voxel_size=0.4,
+            filter_gaussians=True,
+            opacity_thresh=0.6)))
 
 # Data
 dataset_type = 'NuScenesOccDataset'
@@ -132,7 +134,7 @@ train_dataloader = dict(
         pipeline=train_pipeline,
         **shared_dataset_cfg))
 val_dataloader = dict(
-    batch_size=2,
+    batch_size=1,
     num_workers=4,
     persistent_workers=True,
     pin_memory=True,

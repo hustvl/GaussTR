@@ -1,16 +1,9 @@
 import torch
 import torch.nn as nn
-
 from mmdet3d.registry import MODELS
 
-from .utils import generate_grid, get_covariance, quat_to_rotmat
-
-
-def apply_to_items(func, iterable):
-    if isinstance(iterable, list):
-        return [func(i) for i in iterable]
-    elif isinstance(iterable, dict):
-        return {k: func(v) for k, v in iterable.items()}
+from .utils import (apply_to_items, generate_grid, get_covariance,
+                    quat_to_rotmat)
 
 
 def splat_into_3d(grid_coords,
@@ -50,24 +43,37 @@ def splat_into_3d(grid_coords,
 @MODELS.register_module()
 class GaussianVoxelizer(nn.Module):
 
-    def __init__(self, vol_range, voxel_size):
+    def __init__(self,
+                 vol_range,
+                 voxel_size,
+                 filter_gaussians=False,
+                 opacity_thresh=0):
         super().__init__()
-        self.scene_shape = [
+        self.vol_range = vol_range
+        self.grid_shape = [
             int((vol_range[i + 3] - vol_range[i]) / voxel_size)
             for i in range(3)
         ]
-        grid_coords = generate_grid(self.scene_shape, offset=0.5)
+        grid_coords = generate_grid(self.grid_shape, offset=0.5)
         grid_coords = grid_coords * voxel_size + torch.tensor(vol_range[:3])
         self.register_buffer('grid_coords', grid_coords)
+
+        self.filter_gaussians = filter_gaussians
+        self.opacity_thresh = opacity_thresh
 
     def forward(self, **gaussians):
         """
         gaussians:
             means3d, opacities, features, covariances / (scales, rotations)
         """
-        # TODO: filter by opacities & out of boundaries
-        # mask = ...
-        # gaussians = apply_to_items(lambda x: x[mask], gaussians)
+        if self.filter_gaussians:
+            assert gaussians['means3d'].size(0) == 1
+            mask = gaussians['opacities'][0, :, 0] > self.opacity_thresh
+            for i in range(3):
+                mask &= (
+                    gaussians['means3d'][0, :, i] >= self.vol_range[i]) & (
+                        gaussians['means3d'][0, :, i] <= self.vol_range[i + 3])
+            gaussians = apply_to_items(lambda x: x[:, mask], gaussians)
 
         if 'covariances' not in gaussians:
             gaussians['covariances'] = get_covariance(
@@ -75,7 +81,7 @@ class GaussianVoxelizer(nn.Module):
                 quat_to_rotmat(gaussians.pop('rotations')))
         outs = splat_into_3d(self.grid_coords, **gaussians)
         outs = [
-            out.reshape(out.size(0), *self.scene_shape, out.size(-1))
+            out.reshape(out.size(0), *self.grid_shape, out.size(-1))
             for out in (outs if isinstance(outs, tuple) else [outs])
         ]
         return outs if len(outs) > 1 else outs[0]

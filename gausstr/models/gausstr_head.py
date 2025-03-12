@@ -6,13 +6,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from mmdet3d.registry import MODELS
 from mmdet.models import inverse_sigmoid
 from mmengine.model import BaseModule
 
-from mmdet3d.registry import MODELS
-
 from .gsplat_rasterization import rasterize_gaussians
-from .utils import OCC3D_CATEGORIES, cam2world, get_covariance, rotmat_to_quat
+from .utils import (OCC3D_CATEGORIES, cam2world, flatten_bsn_forward,
+                    get_covariance, rotmat_to_quat)
 
 
 @MODELS.register_module()
@@ -48,29 +48,6 @@ class MLP(nn.Module):
             if self.range is not None:
                 x = self.range[0] + (self.range[1] - self.range[0]) * x
         return x
-
-
-def flatten_bsn_forward(func, *args, **kwargs):
-    args = list(args)
-    bsn = None
-    for i, arg in enumerate(args):
-        if isinstance(arg, torch.Tensor):
-            if bsn is None:
-                bsn = arg.shape[:2]
-            args[i] = arg.flatten(0, 1)
-    for k, v in kwargs.items():
-        if isinstance(v, torch.Tensor):
-            if bsn is None:
-                bsn = v.shape[:2]
-            kwargs[k] = v.flatten(0, 1)
-    outs = func(*args, **kwargs)
-    if isinstance(outs, tuple):
-        outs = list(outs)
-        for i, out in outs:
-            outs[i] = out.reshape(bsn + out.shape[1:])
-    else:
-        outs = outs.reshape(bsn + outs.shape[1:])
-    return outs
 
 
 def prompt_denoising(logits, logit_scale=100, pd_threshold=0.1):
