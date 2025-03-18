@@ -1,9 +1,7 @@
-import numpy as np
 import taichi as ti
-import torch
 
-from .utils import (apply_to_items, generate_grid, get_covariance,
-                    quat_to_rotmat, unbatched_forward)
+from .utils import (apply_to_items, get_covariance, quat_to_rotmat,
+                    unbatched_forward)
 
 ti.init(arch=ti.gpu)
 

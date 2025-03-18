@@ -53,7 +53,7 @@ class MLP(nn.Module):
 def prompt_denoising(logits, logit_scale=100, pd_threshold=0.1):
     probs = logits.softmax(-1)
     probs_ = F.softmax(logits * logit_scale, -1)
-    max_cls_conf = probs_.flatten(1, 3).max(1)[0]
+    max_cls_conf = probs_.flatten(1, 3).max(1).values
     selected_cls = (max_cls_conf < pd_threshold)[:, None, None,
                                                  None].expand(*probs.shape)
     probs[selected_cls] = 0
@@ -67,7 +67,7 @@ def merge_probs(probs, categories):
         p = probs[..., i:i + len(cats)]
         i += len(cats)
         if len(cats) > 1:
-            p = p.max(-1, keepdim=True)[0]
+            p = p.max(-1, keepdim=True).values
         merged_probs.append(p)
     return torch.cat(merged_probs, dim=-1)
 
