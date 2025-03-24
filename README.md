@@ -59,7 +59,7 @@ Download the pre-generated CLIP text embeddings from the [Releases](https://gith
 |                               Model                               |  IoU  |  mIoU |                                                 Checkpoint                                                 |
 | ----------------------------------------------------------------- | ----- | ----- | ---------------------------------------------------------------------------------------------------------- |
 | [GaussTR-FeatUp](configs/gausstr_featup.py)                       | 45.19 | 11.70 | [checkpoint](https://github.com/hustvl/GaussTR/releases/download/v1.0/gausstr_featup_e24_miou11.70.pth)    |
-| [GaussTR-Talk2DINO](configs/gausstr_talk2dino.py)<sup>*New*</sup> | 44.73 | 12.08 | [checkpoint](https://github.com/hustvl/GaussTR/releases/download/v1.0/gausstr_talk2dino_e24_miou12.08.pth) |
+| [GaussTR-Talk2DINO](configs/gausstr_talk2dino.py)<sup>*New*</sup> | 44.54 | 12.27 | [checkpoint](https://github.com/hustvl/GaussTR/releases/download/v1.0/gausstr_talk2dino_e24_miou12.08.pth) |
 
 ### Training
 
