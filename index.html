@@ -104,19 +104,19 @@
           <h2 class="title is-3">Abstract</h2>
           <div class="content has-text-justified">
             <p>
-              3D Semantic Occupancy Prediction is fundamental for spatial understanding as it provides a comprehensive
-              semantic cognition of surrounding environments. However, prevalent approaches primarily rely on extensive
-              labeled data and computationally intensive voxel-based modeling, restricting the scalability and
-              generalizability of 3D representation learning. In this paper, we introduce GaussTR, a novel Gaussian
-              Transformer that leverages alignment with foundation models to advance self-supervised 3D spatial
-              understanding. GaussTR adopts a Transformer architecture to predict sparse sets of 3D Gaussians that
-              represent scenes in a feed-forward manner. Through aligning rendered Gaussian features with diverse
-              knowledge from pre-trained foundation models, GaussTR facilitates the learning of versatile 3D
-              representations and enables open-vocabulary occupancy prediction without explicit annotations. Empirical
-              evaluations on the Occ3D-nuScenes dataset showcase GaussTR's state-of-the-art zero-shot performance,
-              achieving 11.70 mIoU while reducing training duration by approximately 50%. These experimental results
-              highlight the significant potential of GaussTR for scalable and holistic 3D spatial understanding, with
-              promising implications for autonomous driving and embodied agents.<br><br><br>
+              3D Semantic Occupancy Prediction is fundamental for spatial understanding, yet existing approaches face
+              challenges in scalability and generalization due to their reliance on extensive labeled data and
+              computationally intensive voxel-wise representations.
+              In this paper, we introduce GaussTR, a novel Gaussian-based Transformer framework that unifies sparse 3D
+              modeling with foundation model alignment through Gaussian representations to advance 3D spatial
+              understanding. GaussTR predicts sparse sets of Gaussians in a feed-forward manner to represent 3D scenes.
+              By splatting the Gaussians into 2D views and aligning the rendered features with foundation models,
+              GaussTR facilitates self-supervised 3D representation learning and enables open-vocabulary semantic
+              occupancy prediction without requiring explicit annotations.
+              Empirical experiments on the Occ3D-nuScenes dataset demonstrate GaussTR's state-of-the-art zero-shot
+              performance of 12.27 mIoU, along with a 40% reduction in training time. These results highlight the
+              efficacy of GaussTR for scalable and holistic 3D spatial understanding, with promising implications in
+              autonomous driving and embodied agents.<br><br><br>
             </p>
           </div>
         </div>
@@ -157,12 +157,12 @@
     <div class="container is-max-desktop">
       <h2 class="title is-3">Framework</h2>
       <div class="content has-text-justified">
-        The GaussTR framework initiates with extracting features and depth estimation using various foundation
-        models, including CLIP and Metric3D. Subsequently, GaussTR predicts a sparse set of Gaussian queries to
-        represent the scene through a series of Transformer layers. During the training phase, the predicted
-        Gaussians are splatted to source views and aligned with original 2D features for supervision. For inference,
-        the Gaussians are converted into logits by measuring their similarity with category vectors, followed by
-        voxelization to produce the final volumetric prediction.
+        The GaussTR framework initiates with extracting multi-view features with pre-trained foundation models. A series
+        of Transformer layers then predict sparse sets of Gaussian queries to represent the 3D scene. During the
+        training phase, predicted Gaussians are rendered via differentiable splatting into source 2D views, enforcing
+        alignment with 2D depth and features from foundation models. At inference, Gaussian features are converted into
+        semantic logits by measuring similarity with text-embedded category vectors, followed by voxelization to produce
+        volumetric predictions.
       </div>
       <img src="static/images/framework.png">
     </div>
@@ -172,18 +172,10 @@
     <div class="container is-max-desktop">
       <h2 class="title is-3">Results</h2>
       <div class="content has-text-justified">
-        GaussTR demonstrates significant improvements over existing methods, outperforming by 1.76 mIoU while reducing
-        training time by 50%. In addition, our approach enables zero-shot inference without requiring explicit label
-        assignments during training, distinguishing it from other methods that rely on pre-generated segmentation labels
-        for predefined categories. These findings underscore the efficacy of our proposed Gaussian-based sparse scene
-        modeling and knowledge alignment with foundation models, which fosters generalizable 3D representations and
-        reduces computational demands compared to previous methods.
-        <br><br>
-        Furthermore, GaussTR particularly excels with object-centric classes, <i>e.g.</i>, cars, trucks, manmade
-        structures, and vegetation. Notably, introducing auxiliary segmentation supervision as an augmentation further
-        improves performance by 0.94 mIoU, especially for small object categories such as motorcycles and pedestrians,
-        suggesting that detailed segmentation helps compensate for the finer granularity that CLIP features alone may
-        lack.
+        GaussTR achieves state-of-the-art zero-shot performance of 12.27 mIoU, outperforming previous methods by 2.33
+        mIoU while reducing training time by 40%. GaussTR demonstrates performance superiority across diverse foundation
+        models including FeatUp and Talk2DINO. These findings validate the scalability and generalization of sparse
+        Gaussian-based 3D modeling and foundation model alignment for self-supervised spatial understanding.
       </div>
       <img src="static/images/main_results.png">
     </div>
@@ -193,12 +185,13 @@
     <div class="container is-max-desktop">
       <h2 class="title is-3">Visulizations</h2>
       <div class="content has-text-justified">
-        we further present visualizations of the rendered depth and semantic maps of occupancy predictions in camera
-        views. To improve interpretability, we apply color perturbations to the semantic maps to highlight the
-        distribution of individual Gaussians and reveal how they collectively reconstruct the scene layout.
-        Additionally, GaussTR exhibits impressive generalization capacity to novel and scarce categories, such as
-        traffic lights and street signs. Owing to its visual-language alignment, GaussTR adapts seamlessly to these
-        categories, generating prominent activations in the corresponding regions and further highlighting its
+        We further analyze GaussTR’s cross-modal consistency by visualizing rendered 2D depth and segmentation maps of
+        Gaussian predictions. To improve interpretability, we apply color perturbations to the semantic maps to
+        highlight the distribution of individual Gaussians and reveal how they collectively reconstruct the scene
+        layout.
+        Additionally, GaussTR exhibits impressive generalization capability to novel and scarce categories, such as
+        traffic lights and street signs. Owing to its alignment with visual-language models, GaussTR can seamlessly
+        adapt to these categories, generating prominent activations in corresponding regions and further validating its
         versatility.
       </div>
       <img src="static/images/vis.png">
@@ -208,11 +201,12 @@
   <section class="section" id="BibTeX">
     <div class="container is-max-desktop content">
       <h2 class="title is-3">BibTeX</h2>
-      <pre><code>@article{GaussTR,
-  title = {GaussTR: Foundation Model-Aligned Gaussian Transformer for Self-Supervised 3D Spatial Understanding}, 
-  author = {Haoyi Jiang and Liu Liu and Tianheng Cheng and Xinjie Wang and Tianwei Lin and Zhizhong Su and Wenyu Liu and Xinggang Wang},
-  year = 2024,
-  journal = {arXiv preprint arXiv:2412.13193}
+      <pre><code>@inproceedings{GaussTR,
+  title     = {GaussTR: Foundation Model-Aligned Gaussian Transformer for Self-Supervised 3D Spatial Understanding},
+  author    = {Haoyi Jiang and Liu Liu and Tianheng Cheng and Xinjie Wang and Tianwei Lin and Zhizhong Su and Wenyu Liu and Xinggang Wang},
+  year      = 2025,
+  booktitle = {CVPR}
+}
 }</code></pre>
     </div>
   </section>
