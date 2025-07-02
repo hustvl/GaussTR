@@ -34,15 +34,16 @@ pip install -r requirements.txt
 
 ### Dataset Preparation
 
-1. Download or manually prepare the nuScenes dataset following the instructions in the [mmdetection3d docs](https://mmdetection3d.readthedocs.io/en/latest/user_guides/dataset_prepare.html#nuscenes).
-2. **Update the prepared dataset `.pkl` files with `scene_idx` to match the occupancy ground truths:**
+1. Download or manually prepare the nuScenes dataset following the instructions in the [mmdetection3d docs](https://mmdetection3d.readthedocs.io/en/latest/user_guides/dataset_prepare.html#nuscenes)
+   and place it in `data/nuscenes`.
+5. **Update the prepared dataset `.pkl` files with `scene_idx` to match the occupancy ground truths:**
 
     ```bash
     python tools/update_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes --extra-tag nuscenes
     ```
 
-3. Download the occupancy ground truth data from [CVPR2023-3D-Occupancy-Prediction](https://github.com/CVPR2023-3D-Occupancy-Prediction/CVPR2023-3D-Occupancy-Prediction) and place it in `data/nuscenes/gts`.
-4. Generate features and rendering targets:
+6. Download the occupancy ground truth data from [CVPR2023-3D-Occupancy-Prediction](https://github.com/CVPR2023-3D-Occupancy-Prediction/CVPR2023-3D-Occupancy-Prediction) and place it in `data/nuscenes/gts`.
+7. Generate features and rendering targets:
 
     * Run `PYTHONPATH=. python tools/generate_depth.py` to generate metric depth estimations.
     * **[For GaussTR-FeatUp Only]** Navigate to the [FeatUp](https://github.com/mhamilton723/FeatUp) repository and run `python tools/generate_featup.py`.
