@@ -76,7 +76,10 @@ train_pipeline = [
         final_dim=input_size,
         resize_lim=[0.48, 0.48],
         is_train=True),
-    dict(type='LoadFeatMaps', data_root='data/nuscenes_metric3d', key='depth', apply_aug=True),
+    dict(type='LoadFeatMaps',
+         data_root='data/nuscenes_metric3d',
+         key='depth',
+         apply_aug=True),
     dict(type='LoadFeatMaps', data_root='data/nuscenes_featup', key='feats'),
     dict(
         type='LoadFeatMaps',
