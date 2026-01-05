@@ -32,6 +32,13 @@ cd GaussTR
 pip install -r requirements.txt
 ```
 
+If you are not familiar with mmlab series, here is our suggested steps:
+
+1.  Determine the appropriate Python, PyTorch, and CUDA versions by checking the [MMCV Installation Docs](https://mmcv.readthedocs.io/en/latest/get_started/installation.html#install-with-pip) and [GSplat Releases](https://github.com/nerfstudio-project/gsplat/releases/), as they have stricter dependency constraints. Note that `mmcv` must be within the range `mmcv>=2.0.0rc4,<2.2.0`, as specified in the [mmdet3d requirements](https://github.com/open-mlab/mmdetection3d/blob/main/requirements/mminstall.txt).
+2. Install the the compatible versions of PyTorch and Torchvision based on the step above.
+3. Install the remaining mmlab packages following the specification in the [mmdet3d requirements](https://github.com/open-mlab/mmdetection3d/blob/main/requirements/mminstall.txt).
+4. Install the rest of requirements.
+
 ### Dataset Preparation
 
 1. Download or manually prepare the nuScenes dataset following the instructions in the [mmdetection3d docs](https://mmdetection3d.readthedocs.io/en/latest/user_guides/dataset_prepare.html#nuscenes) and place it in `data/nuscenes`.
